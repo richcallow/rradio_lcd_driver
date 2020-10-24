@@ -1,5 +1,7 @@
 use std::io::Read;
 
+type Event = rradio_messages::Event<String, String, Vec<rradio_messages::Track>>;
+
 fn main() {
     println!("Hello, world!");
     let mut connection =
@@ -21,5 +23,9 @@ fn main() {
         connection.read_exact(&mut buffer).unwrap();
 
         println!("length {},   {:?}", message_length, buffer);
+
+        let event: Event = rmp_serde::from_slice(&buffer).unwrap();
+
+        println!("Event: {:?}", event);
     }
 }
