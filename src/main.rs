@@ -1,9 +1,35 @@
+pub use rradio_messages::PipelineState;
 use std::io::Read;
+mod lcd_screen;
 
 type Event = rradio_messages::Event<String, String, Vec<rradio_messages::Track>>;
 
+fn decode_option_diff<T>(option_diff: rradio_messages::OptionDiff<T>) -> Option<Option<T>> {
+    match option_diff {
+        rradio_messages::OptionDiff::ChangedToSome(t) => Some(Some(t)),
+        rradio_messages::OptionDiff::ChangedToNone => Some(None),
+        rradio_messages::OptionDiff::NoChange => None,
+    }
+}
+
 fn main() {
-    println!("Hello, world!");
+    let mut lcd = lcd_screen::LcdScreen::init();
+
+    for character in "in main".chars() {
+        lcd.write(character as u8);
+    }
+    /*
+    if let Err(err) = lcd_screen::LcdScreen::new() {
+        println!("Got error {:?} when initialising the screen", err);
+    };
+
+    let z = lcd_screen::LcdScreen::new();*/
+    //let g = lcd_screen::LcdScreen::write("d".to_string());
+
+    let mut pipe_line_state: PipelineState = PipelineState::VoidPending;
+    let mut volume: i32 = -1;
+    let mut current_track_index: usize = 0;
+
     let mut connection =
         std::net::TcpStream::connect((std::net::Ipv4Addr::LOCALHOST, 8002)).unwrap();
 
@@ -22,10 +48,52 @@ fn main() {
 
         connection.read_exact(&mut buffer).unwrap();
 
-        println!("length {},   {:?}", message_length, buffer);
+        // println!("length {},   {:?}", message_length, buffer);
 
         let event: Event = rmp_serde::from_slice(&buffer).unwrap();
 
-        println!("Event: {:?}", event);
+        // println!("Event: {:?}", event);
+
+        match event {
+            Event::ProtocolVersion(version) => assert_eq!(version, rradio_messages::VERSION),
+            Event::LogMessage(log_message) => println!("{:?}", log_message),
+            Event::PlayerStateChanged(diff) => {
+                if let Some(pipeline_state) = diff.pipeline_state {
+                    pipe_line_state = pipeline_state;
+                    print_volume(pipe_line_state, volume);
+                }
+                if let Some(current_station) = decode_option_diff(diff.current_station) {
+                    println!("Current Station: {:?}", current_station);
+                    //if let Some (station_index ) = current_station.S {}
+                }
+                if let Some(current_track_index_in) = diff.current_track_index {
+                    current_track_index = current_track_index_in;
+                    println!("Current Track index: {}", current_track_index);
+                }
+                if let Some(current_track_tags) = decode_option_diff(diff.current_track_tags) {
+                    println!("Current Track Tags: {:?}", current_track_tags);
+                }
+                if let Some(volume_in) = diff.volume {
+                    volume = volume_in;
+                    print_volume(pipe_line_state, volume);
+                }
+                if let Some(buffering) = diff.buffering {
+                    println!("buffering: {}", buffering);
+                }
+                if let Some(track_duration) = diff.track_duration {
+                    println!("track duration: {:?}", track_duration);
+                }
+                if let Some(track_position) = diff.track_position {
+                    println!("track position: {:?}", track_position);
+                }
+            }
+        }
+    }
+    fn print_volume(pipe_line_state: PipelineState, volume: i32) {
+        if pipe_line_state == PipelineState::Playing && volume > 0 {
+            println!("Volume {}", volume)
+        } else {
+            println!("state {:?}", pipe_line_state)
+        }
     }
 }
