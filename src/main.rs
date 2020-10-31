@@ -1,5 +1,7 @@
-pub use rradio_messages::PipelineState;
+use anyhow::Context;
+use rradio_messages::PipelineState;
 use std::io::Read;
+
 mod lcd_screen;
 
 type Event = rradio_messages::Event<String, String, Vec<rradio_messages::Track>>;
@@ -12,19 +14,24 @@ fn decode_option_diff<T>(option_diff: rradio_messages::OptionDiff<T>) -> Option<
     }
 }
 
-fn main() {
-    let mut lcd = lcd_screen::LcdScreen::init();
+fn main() -> Result<(), anyhow::Error> {
+    let mut lcd = lcd_screen::LcdScreen::new()
+        .context("Failed to initialize LCD screen")
+        .map_err(|err| {
+            // Kill other screen drivers here
+            err
+        })?;
 
-    for character in "in main".chars() {
-        lcd.write(character as u8);
-    }
-    /*
-    if let Err(err) = lcd_screen::LcdScreen::new() {
-        println!("Got error {:?} when initialising the screen", err);
-    };
-
-    let z = lcd_screen::LcdScreen::new();*/
-    //let g = lcd_screen::LcdScreen::write("d".to_string());
+    lcd.write_ascii(
+        lcd_screen::LCDLineNumbers::Line1,
+        3,
+        "test123456".to_string(),
+    );
+    lcd.write_multiline(
+        lcd_screen::LCDLineNumbers::Line2,
+        40,
+        "test22éè123456789012345678901234567890".to_string(),
+    );
 
     let mut pipe_line_state: PipelineState = PipelineState::VoidPending;
     let mut volume: i32 = -1;
@@ -35,6 +42,7 @@ fn main() {
 
     loop {
         let mut message_length_buffer = [0; 2];
+        //lcd.write_ascii(lcd_screen::LCDLineNumbers::Line3, 8, "test why does this not work".to_string());
 
         match connection.read(&mut message_length_buffer).unwrap() {
             0 => break,
@@ -60,7 +68,7 @@ fn main() {
             Event::PlayerStateChanged(diff) => {
                 if let Some(pipeline_state) = diff.pipeline_state {
                     pipe_line_state = pipeline_state;
-                    print_volume(pipe_line_state, volume);
+                    //print_volume(pipe_line_state, volume, lcd);
                 }
                 if let Some(current_station) = decode_option_diff(diff.current_station) {
                     println!("Current Station: {:?}", current_station);
@@ -75,7 +83,7 @@ fn main() {
                 }
                 if let Some(volume_in) = diff.volume {
                     volume = volume_in;
-                    print_volume(pipe_line_state, volume);
+                    //print_volume(pipe_line_state, volume, lcd);
                 }
                 if let Some(buffering) = diff.buffering {
                     println!("buffering: {}", buffering);
@@ -89,11 +97,17 @@ fn main() {
             }
         }
     }
-    fn print_volume(pipe_line_state: PipelineState, volume: i32) {
+    fn print_volume(pipe_line_state: PipelineState, volume: i32, mut lcd: lcd_screen::LcdScreen) {
         if pipe_line_state == PipelineState::Playing && volume > 0 {
-            println!("Volume {}", volume)
+            println!("Volume {}", volume);
+            lcd.write_ascii(
+                lcd_screen::LCDLineNumbers::Line1,
+                lcd_screen::LCDLineNumbers::NUM_CHARACTERS_PER_LINE - 7,
+                format!("Vol{:>4.7}", volume),
+            );
         } else {
             println!("state {:?}", pipe_line_state)
         }
     }
+    Ok(())
 }

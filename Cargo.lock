@@ -133,6 +133,7 @@ dependencies = [
  "rradio-messages 0.6.0 (git+https://github.com/sammhicks/internet-radio-rs)",
  "serde 1.0.117 (registry+https://github.com/rust-lang/crates.io-index)",
  "toml 0.5.7 (registry+https://github.com/rust-lang/crates.io-index)",
+ "unidecode 0.3.0 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
 [[package]]
@@ -177,6 +178,11 @@ version = "0.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 
 [[package]]
+name = "unidecode"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+
+[[package]]
 name = "void"
 version = "1.0.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -204,4 +210,5 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 "checksum syn 1.0.46 (registry+https://github.com/rust-lang/crates.io-index)" = "5ad5de3220ea04da322618ded2c42233d02baca219d6f160a3e9c87cda16c942"
 "checksum toml 0.5.7 (registry+https://github.com/rust-lang/crates.io-index)" = "75cf45bb0bef80604d001caaec0d09da99611b3c0fd39d3080468875cdb65645"
 "checksum unicode-xid 0.2.1 (registry+https://github.com/rust-lang/crates.io-index)" = "f7fe0bb3479651439c9112f72b6c505038574c9fbb575ed1bf3b797fa39dd564"
+"checksum unidecode 0.3.0 (registry+https://github.com/rust-lang/crates.io-index)" = "402bb19d8e03f1d1a7450e2bd613980869438e0666331be3e073089124aa1adc"
 "checksum void 1.0.2 (registry+https://github.com/rust-lang/crates.io-index)" = "6a02e4885ed3bc0f2de90ea6dd45ebcbb66dacffe03547fadbb0eeae2770887d"

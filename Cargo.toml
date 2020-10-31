@@ -15,3 +15,4 @@ gpio-cdev = "0.4" # lcd_screen
 rradio-messages = { git = "https://github.com/sammhicks/internet-radio-rs" }
 serde = { version = "1.0", features = ["derive", "rc"] }
 toml = "0.5"
+unidecode = "0.3" # lcd_screen
