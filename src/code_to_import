@@ -27,22 +27,6 @@ mod character_pattern;
             format!("{:<7.7}", next_state.pipeline_state.to_string()) //if we use  next_state.pipeline_state.to_string() without the .to_string, the result can be less than 7 characters long
         };
 
-
-        println!("\rbuf Rx by screen {}\r", next_state.buffering);
-        let trimmed_buffer = next_state.buffering.min(99); //0 to 100 is 101 values, & the screen only handles 100 values, so trim downwards
-
-        #[allow(clippy::cast_possible_wrap)]
-        let scaled_buffer = (trimmed_buffer / 5) as i8; //the characters have 5 columns
-
-        lcd.seek(clerk::SeekFrom::Home(LCDLineNumbers::Line4.offset() + 0));
-
-        for _count in 0..scaled_buffer {
-            lcd.write(' ' as u8); //first write space in all the character positions before the cursor
-        }
-        lcd.write((trimmed_buffer % 5) as u8); //then write the apppriate cursor character in the next position
-        for _count in scaled_buffer + 1..20 {
-            lcd.write(' ' as u8); //then clear the rest of the line
-        }
     }
 
     lcd.clear();
@@ -50,33 +34,9 @@ mod character_pattern;
 
     lcd.seek(clerk::SeekFrom::Home(LCDLineNumbers::Line1.offset()));
 
-    for character in "Program shut down".chars() {
-        lcd.write(character as u8);
-    }
-
     Ok(())
 }
-fn get_cpu_temperature() -> i32 {
-    let mut file = File::open("/sys/class/thermal/thermal_zone0/temp").unwrap_or_else(|error| {
-        panic!(
-            "Problem opening the CPU temperature pseudo-file: {:?}",
-            error
-        );
-    });
 
-    let mut cpu_temperature = String::new();
-
-    match file.read_to_string(&mut cpu_temperature) {
-        Err(why) => panic!("couldn't read the temperature from the pseduo file {}", why),
-        Ok(_file_size) => {
-            let milli_temp: i32 = cpu_temperature //cpu_temperature contains the temperature in milli-C and a line terminator
-                .trim() //to get rid of the terminator
-                .parse()
-                .expect("CPU temperature was non-numeric");
-            return milli_temp / 1000; //divide by 1000 to convert to C from milli-C and return the temperature
-        }
-    };
-}
 fn get_local_ip_address() -> String {
     let mut return_value: String = String::from("bad Local IP address");
     for iface in pnet::datalink::interfaces() {

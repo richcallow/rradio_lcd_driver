@@ -2,6 +2,7 @@ use anyhow::Context;
 use rradio_messages::PipelineState;
 use std::io::Read;
 
+mod get_temperature;
 mod lcd_screen;
 
 type Event = rradio_messages::Event<String, String, Vec<rradio_messages::Track>>;
@@ -23,9 +24,9 @@ fn main() -> Result<(), anyhow::Error> {
         })?;
 
     lcd.write_ascii(
-        lcd_screen::LCDLineNumbers::Line1,
-        3,
-        "test123456".to_string(),
+        lcd_screen::LCDLineNumbers::Line4,
+        0,
+        format!("CPU Temp {} C", get_temperature::get_cpu_temperature()),
     );
     lcd.write_multiline(
         lcd_screen::LCDLineNumbers::Line2,
@@ -86,7 +87,7 @@ fn main() -> Result<(), anyhow::Error> {
                     //print_volume(pipe_line_state, volume, lcd);
                 }
                 if let Some(buffering) = diff.buffering {
-                    println!("buffering: {}", buffering);
+                    lcd.write_buffer_state(buffering);
                 }
                 if let Some(track_duration) = diff.track_duration {
                     println!("track duration: {:?}", track_duration);
@@ -97,6 +98,19 @@ fn main() -> Result<(), anyhow::Error> {
             }
         }
     }
+    lcd.clear();
+    lcd.write_ascii(
+        lcd_screen::LCDLineNumbers::Line1,
+        0,
+        "Ending screen driver".to_string(),
+    );
+    lcd.write_multiline(
+        lcd_screen::LCDLineNumbers::Line3,
+        40,
+        "But not shut down the computer".to_string(),
+    );
+    println!("exiting screen driver");
+
     fn print_volume(pipe_line_state: PipelineState, volume: i32, mut lcd: lcd_screen::LcdScreen) {
         if pipe_line_state == PipelineState::Playing && volume > 0 {
             println!("Volume {}", volume);

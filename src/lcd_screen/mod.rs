@@ -66,6 +66,26 @@ impl LcdScreen {
         Ok(Self { lcd })
     }
 
+    pub fn clear(&self) {
+        self.lcd.clear();
+        std::thread::sleep(std::time::Duration::from_millis(3));
+    }
+
+    pub fn write_buffer_state(&mut self, buffer_position: u8) {
+        self.lcd
+            .seek(clerk::SeekFrom::Home(LCDLineNumbers::Line4.offset()));
+        let trimmed_buffer = buffer_position.min(99); //0 to 100 is 101 values, & the screen only handles 100 values, so trim downwards
+        #[allow(clippy::cast_possible_wrap)]
+        let scaled_buffer = (trimmed_buffer / 5) as i8; //the characters have 5 columns
+        for _count in 0..scaled_buffer {
+            self.lcd.write(' ' as u8); //first write space in all the character positions before the cursor
+        }
+        self.lcd.write((trimmed_buffer % 5) as u8); //then write the apppriate cursor character in the next position
+        for _count in scaled_buffer + 1..20 {
+            self.lcd.write(' ' as u8); //then clear the rest of the line
+        }
+    }
+
     pub fn write_ascii(&mut self, line: LCDLineNumbers, position: u8, string: String) {
         self.lcd
             .seek(clerk::SeekFrom::Home(line.offset() + position));
