@@ -2,6 +2,7 @@ use anyhow::Context;
 use rradio_messages::PipelineState;
 use std::io::Read;
 
+mod get_local_ip_address;
 mod get_temperature;
 mod lcd_screen;
 
@@ -23,6 +24,11 @@ fn main() -> Result<(), anyhow::Error> {
             err
         })?;
 
+    lcd.write_ascii(
+        lcd_screen::LCDLineNumbers::Line1,
+        0,
+        get_local_ip_address::get_local_ip_address(),
+    );
     lcd.write_ascii(
         lcd_screen::LCDLineNumbers::Line4,
         0,
