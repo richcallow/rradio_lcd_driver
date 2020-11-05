@@ -26,15 +26,12 @@ fn main() -> Result<(), anyhow::Error> {
         0,
         &format!("CPU Temp {} C", get_temperature::get_cpu_temperature()),
     );
-    lcd.write_multiline(
-        lcd_screen::LCDLineNumbers::Line2,
-        40,
-        "test22éè123456789012345678901234567890",
-    );
 
     let mut pipe_line_state: PipelineState = PipelineState::VoidPending;
     let mut volume: i32 = -1;
     let mut current_track_index: usize = 0;
+    let mut current_channel: String;
+    let mut station_title: String;
 
     let mut connection =
         std::net::TcpStream::connect((std::net::Ipv4Addr::LOCALHOST, 8002)).unwrap();
@@ -70,6 +67,31 @@ fn main() -> Result<(), anyhow::Error> {
                 if let Some(current_station) = diff.current_station.into_option() {
                     if let Some(station) = current_station {
                         println!("Current Station{:?}", station);
+                        if let Some(current_channel_in) = station.index {
+                            current_channel = current_channel_in;
+                            lcd.write_line(
+                                lcd_screen::LCDLineNumbers::Line1,
+                                13,
+                                format!(
+                                    "{Thestring:<Width$.Width$}",
+                                    Thestring = current_channel.as_str(),
+                                    Width = 13
+                                )
+                                .as_str(),
+                            );
+                            println!("current_channel {}", current_channel);
+                        }
+                        if let Some(title) = station.title {
+                            station_title = title;
+                        } else {
+                            station_title = "".to_string()
+                        }
+                        println!("station title {}", station_title);
+                        lcd.write_line(
+                            lcd_screen::LCDLineNumbers::Line2,
+                            lcd_screen::LCDLineNumbers::NUM_CHARACTERS_PER_LINE as usize,
+                            station_title.as_str(),
+                        )
                     }
                 }
                 if let Some(current_track_index_in) = diff.current_track_index {
@@ -77,7 +99,12 @@ fn main() -> Result<(), anyhow::Error> {
                     println!("Current Track index: {}", current_track_index);
                 }
                 if let Some(current_track_tags) = diff.current_track_tags.into_option() {
-                    println!("Current Track Tags: {:?}", current_track_tags);
+                    if let Some(track_tags) = current_track_tags {
+                        println!("current track tags{:?}", track_tags);
+                        if let Some(ye_organisation_from_tag) = track_tags.organisation {
+                            println!("ye_organisation_from_tag {}", ye_organisation_from_tag);
+                        }
+                    }
                 }
                 if let Some(volume_in) = diff.volume {
                     volume = volume_in;
