@@ -8,14 +8,6 @@ mod lcd_screen;
 
 type Event = rradio_messages::Event<String, String, Vec<rradio_messages::Track>>;
 
-fn decode_option_diff<T>(option_diff: rradio_messages::OptionDiff<T>) -> Option<Option<T>> {
-    match option_diff {
-        rradio_messages::OptionDiff::ChangedToSome(t) => Some(Some(t)),
-        rradio_messages::OptionDiff::ChangedToNone => Some(None),
-        rradio_messages::OptionDiff::NoChange => None,
-    }
-}
-
 fn main() -> Result<(), anyhow::Error> {
     let mut lcd = lcd_screen::LcdScreen::new()
         .context("Failed to initialize LCD screen")
@@ -27,17 +19,17 @@ fn main() -> Result<(), anyhow::Error> {
     lcd.write_ascii(
         lcd_screen::LCDLineNumbers::Line1,
         0,
-        get_local_ip_address::get_local_ip_address(),
+        get_local_ip_address::get_local_ip_address().as_str(),
     );
     lcd.write_ascii(
         lcd_screen::LCDLineNumbers::Line4,
         0,
-        format!("CPU Temp {} C", get_temperature::get_cpu_temperature()),
+        &format!("CPU Temp {} C", get_temperature::get_cpu_temperature()),
     );
     lcd.write_multiline(
         lcd_screen::LCDLineNumbers::Line2,
         40,
-        "test22éè123456789012345678901234567890".to_string(),
+        "test22éè123456789012345678901234567890",
     );
 
     let mut pipe_line_state: PipelineState = PipelineState::VoidPending;
@@ -49,8 +41,6 @@ fn main() -> Result<(), anyhow::Error> {
 
     loop {
         let mut message_length_buffer = [0; 2];
-        //lcd.write_ascii(lcd_screen::LCDLineNumbers::Line3, 8, "test why does this not work".to_string());
-
         match connection.read(&mut message_length_buffer).unwrap() {
             0 => break,
             2 => (),
@@ -63,7 +53,7 @@ fn main() -> Result<(), anyhow::Error> {
 
         connection.read_exact(&mut buffer).unwrap();
 
-        // println!("length {},   {:?}", message_length, buffer);
+        //println!("length {},   {:?}", message_length, buffer);
 
         let event: Event = rmp_serde::from_slice(&buffer).unwrap();
 
@@ -75,59 +65,44 @@ fn main() -> Result<(), anyhow::Error> {
             Event::PlayerStateChanged(diff) => {
                 if let Some(pipeline_state) = diff.pipeline_state {
                     pipe_line_state = pipeline_state;
-                    //print_volume(pipe_line_state, volume, lcd);
+                    lcd.write_volume(pipe_line_state, volume);
                 }
-                if let Some(current_station) = decode_option_diff(diff.current_station) {
-                    println!("Current Station: {:?}", current_station);
-                    //if let Some (station_index ) = current_station.S {}
+                if let Some(current_station) = diff.current_station.into_option() {
+                    if let Some(station) = current_station {
+                        println!("Current Station{:?}", station);
+                    }
                 }
                 if let Some(current_track_index_in) = diff.current_track_index {
                     current_track_index = current_track_index_in;
                     println!("Current Track index: {}", current_track_index);
                 }
-                if let Some(current_track_tags) = decode_option_diff(diff.current_track_tags) {
+                if let Some(current_track_tags) = diff.current_track_tags.into_option() {
                     println!("Current Track Tags: {:?}", current_track_tags);
                 }
                 if let Some(volume_in) = diff.volume {
                     volume = volume_in;
-                    //print_volume(pipe_line_state, volume, lcd);
+                    lcd.write_volume(pipe_line_state, volume);
                 }
                 if let Some(buffering) = diff.buffering {
                     lcd.write_buffer_state(buffering);
                 }
-                if let Some(track_duration) = diff.track_duration {
+                if let Some(track_duration) = diff.track_duration.into_option() {
                     println!("track duration: {:?}", track_duration);
                 }
-                if let Some(track_position) = diff.track_position {
-                    println!("track position: {:?}", track_position);
+                if let Some(track_position) = diff.track_position.into_option() {
+                    //println!("track position: {:?}", track_position);
                 }
             }
         }
     }
     lcd.clear();
-    lcd.write_ascii(
-        lcd_screen::LCDLineNumbers::Line1,
-        0,
-        "Ending screen driver".to_string(),
-    );
+    lcd.write_ascii(lcd_screen::LCDLineNumbers::Line1, 0, "Ending screen driver");
     lcd.write_multiline(
         lcd_screen::LCDLineNumbers::Line3,
         40,
-        "But not shut down the computer".to_string(),
+        "Computer not shut   down",
     );
     println!("exiting screen driver");
 
-    fn print_volume(pipe_line_state: PipelineState, volume: i32, mut lcd: lcd_screen::LcdScreen) {
-        if pipe_line_state == PipelineState::Playing && volume > 0 {
-            println!("Volume {}", volume);
-            lcd.write_ascii(
-                lcd_screen::LCDLineNumbers::Line1,
-                lcd_screen::LCDLineNumbers::NUM_CHARACTERS_PER_LINE - 7,
-                format!("Vol{:>4.7}", volume),
-            );
-        } else {
-            println!("state {:?}", pipe_line_state)
-        }
-    }
     Ok(())
 }

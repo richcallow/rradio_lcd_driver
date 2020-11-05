@@ -1,4 +1,5 @@
 use anyhow::Context;
+use rradio_messages::PipelineState;
 
 mod character_pattern;
 mod hal;
@@ -21,6 +22,14 @@ impl LCDLineNumbers {
             LCDLineNumbers::Line2 => Self::ROW_OFFSET,
             LCDLineNumbers::Line3 => Self::NUM_CHARACTERS_PER_LINE,
             LCDLineNumbers::Line4 => Self::ROW_OFFSET + Self::NUM_CHARACTERS_PER_LINE,
+        }
+    }
+    fn next(self) -> Self {
+        match self {
+            Self::Line1 => Self::Line2,
+            Self::Line2 => Self::Line3,
+            Self::Line3 => Self::Line4,
+            Self::Line4 => Self::Line1,
         }
     }
 }
@@ -86,14 +95,14 @@ impl LcdScreen {
         }
     }
 
-    pub fn write_ascii(&mut self, line: LCDLineNumbers, position: u8, string: String) {
+    pub fn write_ascii(&mut self, line: LCDLineNumbers, position: u8, string: &str) {
         self.lcd
             .seek(clerk::SeekFrom::Home(line.offset() + position));
         for character in string.chars() {
             self.lcd.write(character as u8);
         }
     }
-    pub fn write_utf8(&mut self, line: LCDLineNumbers, position: u8, string: String) {
+    pub fn write_utf8(&mut self, line: LCDLineNumbers, position: u8, string: &str) {
         self.lcd
             .seek(clerk::SeekFrom::Home(line.offset() + position));
         for unicode_character in string.chars() {
@@ -121,7 +130,7 @@ impl LcdScreen {
             }
         }
     }
-    pub fn write_line(&mut self, line: LCDLineNumbers, length: usize, string: String) {
+    pub fn write_line(&mut self, line: LCDLineNumbers, length: usize, string: &str) {
         self.lcd.seek(clerk::SeekFrom::Home(line.offset()));
         let string_to_output = format!(
             "{Thestring:<Width$.Width$}",
@@ -153,9 +162,8 @@ impl LcdScreen {
             }
         }
     }
-    pub fn write_multiline(&mut self, line: LCDLineNumbers, length: usize, string: String) {
-        let mut local_line = &line;
-        self.lcd.seek(clerk::SeekFrom::Home(local_line.offset()));
+    pub fn write_multiline(&mut self, mut line: LCDLineNumbers, length: usize, string: &str) {
+        self.lcd.seek(clerk::SeekFrom::Home(line.offset()));
         let string_to_output = format!(
             "{Thestring:<Width$.Width$}",
             Thestring = string,
@@ -169,13 +177,8 @@ impl LcdScreen {
                 num_characters_written += 1;
                 if num_characters_written >= LCDLineNumbers::NUM_CHARACTERS_PER_LINE {
                     num_characters_written = 0;
-                    match local_line {
-                        LCDLineNumbers::Line1 => local_line = &LCDLineNumbers::Line2,
-                        LCDLineNumbers::Line2 => local_line = &LCDLineNumbers::Line3,
-                        LCDLineNumbers::Line3 => local_line = &LCDLineNumbers::Line4,
-                        LCDLineNumbers::Line4 => local_line = &LCDLineNumbers::Line1,
-                    }
-                    self.lcd.seek(clerk::SeekFrom::Home(local_line.offset()));
+                    line = line.next();
+                    self.lcd.seek(clerk::SeekFrom::Home(line.offset()));
                 }
             } else {
                 let ascii_character_bytes = match unicode_character {
@@ -197,17 +200,24 @@ impl LcdScreen {
                     num_characters_written += 1;
                     if num_characters_written >= LCDLineNumbers::NUM_CHARACTERS_PER_LINE {
                         num_characters_written = 0;
-                        match local_line {
-                            LCDLineNumbers::Line1 => local_line = &LCDLineNumbers::Line2,
-                            LCDLineNumbers::Line2 => local_line = &LCDLineNumbers::Line3,
-                            LCDLineNumbers::Line3 => local_line = &LCDLineNumbers::Line4,
-                            LCDLineNumbers::Line4 => local_line = &LCDLineNumbers::Line1,
-                        }
-                        self.lcd.seek(clerk::SeekFrom::Home(local_line.offset()));
+                        line = line.next();
+                        self.lcd.seek(clerk::SeekFrom::Home(line.offset()));
                     }
                 }
             }
         }
+    }
+    pub fn write_volume(&mut self, pipe_line_state: PipelineState, volume: i32) {
+        let message = if pipe_line_state == PipelineState::Playing && volume >= 0 {
+            format!("Vol{:>4.7}", volume)
+        } else {
+            format!("{:<7.7}", pipe_line_state.to_string()) //if we use  next_state.pipeline_state.to_string() without the .to_string, the result can be less than 7 characters long
+        };
+        self.write_ascii(
+            LCDLineNumbers::Line1,
+            LCDLineNumbers::NUM_CHARACTERS_PER_LINE - 7,
+            message.as_str(),
+        );
     }
 }
 
