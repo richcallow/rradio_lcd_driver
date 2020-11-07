@@ -32,7 +32,7 @@ fn main() -> Result<(), anyhow::Error> {
     let mut current_track_index: usize = 0;
     let mut current_channel: String;
     let mut station_title: String;
-
+    let mut duration: Option<std::time::Duration> = None;
     let mut connection =
         std::net::TcpStream::connect((std::net::Ipv4Addr::LOCALHOST, 8002)).unwrap();
 
@@ -58,35 +58,43 @@ fn main() -> Result<(), anyhow::Error> {
 
         match event {
             Event::ProtocolVersion(version) => assert_eq!(version, rradio_messages::VERSION),
-            Event::LogMessage(log_message) => println!("{:?}", log_message),
+            Event::LogMessage(log_message) => println!("aaaaaa{:?}", log_message),
             Event::PlayerStateChanged(diff) => {
                 if let Some(pipeline_state) = diff.pipeline_state {
                     pipe_line_state = pipeline_state;
                     lcd.write_volume(pipe_line_state, volume);
                 }
                 if let Some(current_station) = diff.current_station.into_option() {
+                    duration = None;
                     if let Some(station) = current_station {
-                        println!("Current Station{:?}", station);
+                        println!(
+                            "Current Station{:?} with {} tracks",
+                            station,
+                            station.tracks.len()
+                        );
+
                         if let Some(current_channel_in) = station.index {
                             current_channel = current_channel_in;
-                            lcd.write_line(
-                                lcd_screen::LCDLineNumbers::Line1,
-                                13,
-                                format!(
-                                    "{Thestring:<Width$.Width$}",
-                                    Thestring = current_channel.as_str(),
-                                    Width = 13
-                                )
-                                .as_str(),
-                            );
-                            println!("current_channel {}", current_channel);
+                        } else {
+                            current_channel = "??".to_string();
                         }
+                        lcd.write_line(
+                            lcd_screen::LCDLineNumbers::Line1,
+                            13,
+                            format!(
+                                "{Thestring:<Width$.Width$}",
+                                Thestring = current_channel.as_str(),
+                                Width = 13
+                            )
+                            .as_str(),
+                        );
+                        println!("current_channel {}", current_channel);
+
                         if let Some(title) = station.title {
                             station_title = title;
                         } else {
                             station_title = "".to_string()
                         }
-                        println!("station title {}", station_title);
                         lcd.write_line(
                             lcd_screen::LCDLineNumbers::Line2,
                             lcd_screen::LCDLineNumbers::NUM_CHARACTERS_PER_LINE as usize,
@@ -102,7 +110,15 @@ fn main() -> Result<(), anyhow::Error> {
                     if let Some(track_tags) = current_track_tags {
                         println!("current track tags{:?}", track_tags);
                         if let Some(ye_organisation_from_tag) = track_tags.organisation {
-                            println!("ye_organisation_from_tag {}", ye_organisation_from_tag);
+                            station_title = ye_organisation_from_tag;
+                            lcd.write_line(
+                                lcd_screen::LCDLineNumbers::Line2,
+                                lcd_screen::LCDLineNumbers::NUM_CHARACTERS_PER_LINE as usize,
+                                station_title.as_str(),
+                            )
+                        }
+                        if let Some(ye_tag_title) = track_tags.title {
+                            println!("ye_tag_title {}", ye_tag_title);
                         }
                     }
                 }
@@ -113,11 +129,20 @@ fn main() -> Result<(), anyhow::Error> {
                 if let Some(buffering) = diff.buffering {
                     lcd.write_buffer_state(buffering);
                 }
-                if let Some(track_duration) = diff.track_duration.into_option() {
-                    println!("track duration: {:?}", track_duration);
+                if let Some(track_duration_in) = diff.track_duration.into_option() {
+                    duration = track_duration_in;
                 }
-                if let Some(track_position) = diff.track_position.into_option() {
-                    //println!("track position: {:?}", track_position);
+                if let Some(position) = diff.track_position.into_option() {
+                    if let Some((duration, position)) = duration.zip(position) {
+                        if position > std::time::Duration::from_secs(4) {
+                            lcd.write_line(
+                                lcd_screen::LCDLineNumbers::Line1,
+                                13,
+                                format!("{} of {}", position.as_secs(), duration.as_secs())
+                                    .as_str(),
+                            )
+                        }
+                    }
                 }
             }
         }
