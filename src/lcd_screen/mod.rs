@@ -1,4 +1,5 @@
 use anyhow::Context;
+use chrono::Local;
 use rradio_messages::PipelineState;
 
 mod character_pattern;
@@ -15,6 +16,10 @@ pub enum LCDLineNumbers {
 impl LCDLineNumbers {
     pub const NUM_CHARACTERS_PER_LINE: u8 = 20; //the display is visually 20 * 4 characters
     pub const ROW_OFFSET: u8 = 0x40; //specified by the chip
+
+    pub const VOLUME_CHAR_COUNT: usize = 7;
+    pub const LINE1_DATA_CHAR_COUNT: usize =
+        Self::NUM_CHARACTERS_PER_LINE as usize - Self::VOLUME_CHAR_COUNT;
 
     fn offset(self) -> u8 {
         match self {
@@ -209,15 +214,33 @@ impl LcdScreen {
     }
     pub fn write_volume(&mut self, pipe_line_state: PipelineState, volume: i32) {
         let message = if pipe_line_state == PipelineState::Playing && volume >= 0 {
-            format!("Vol{:>4.7}", volume)
+            format!(
+                "Vol{:>Width$.Width$}",
+                volume,
+                Width = LCDLineNumbers::VOLUME_CHAR_COUNT - 3
+            )
         } else {
-            format!("{:<7.7}", pipe_line_state.to_string()) //if we use  next_state.pipeline_state.to_string() without the .to_string, the result can be less than 7 characters long
+            format!(
+                "{:<Width$.Width$}",
+                pipe_line_state.to_string(),
+                Width = LCDLineNumbers::VOLUME_CHAR_COUNT
+            ) //if we use  next_state.pipeline_state.to_string() without the .to_string, the result can be less than 7 characters long
         };
         self.write_ascii(
             LCDLineNumbers::Line1,
-            LCDLineNumbers::NUM_CHARACTERS_PER_LINE - 7,
+            LCDLineNumbers::LINE1_DATA_CHAR_COUNT as u8,
             message.as_str(),
         );
+    }
+    pub fn write_time_of_day(&mut self) {
+        self.write_line(
+            LCDLineNumbers::Line3,
+            LCDLineNumbers::NUM_CHARACTERS_PER_LINE as usize,
+            Local::now()
+                .format("  %d %b %y %H:%M:%SS")
+                .to_string()
+                .as_str(),
+        )
     }
 }
 
