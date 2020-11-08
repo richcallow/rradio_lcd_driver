@@ -34,15 +34,15 @@ fn main() -> Result<(), anyhow::Error> {
         &format!("CPU Temp {} C", get_temperature::get_cpu_temperature()),
     );
 
-    let mut pipe_line_state: PipelineState = PipelineState::VoidPending;
-    let mut volume: i32 = -1;
-    let mut current_track_index: usize = 0;
-    let mut current_channel = String::new();
-    let mut station_title = String::new();
-    let mut duration: Option<std::time::Duration> = None;
-    let mut number_of_tracks: usize = 0;
-    let mut song_title = String::new();
     smol::block_on(async move {
+        let mut pipe_line_state: PipelineState = PipelineState::VoidPending;
+        let mut volume: i32 = -1;
+        let mut current_track_index: usize = 0;
+        let mut current_channel: String;
+        let mut station_title: String;
+        let mut duration: Option<std::time::Duration> = None;
+        let mut number_of_tracks: usize = 0;
+        let mut song_title = String::new();
         let mut connection = smol::net::TcpStream::connect((std::net::Ipv4Addr::LOCALHOST, 8002))
             .await
             .context("Could not connect to server")?;
@@ -86,9 +86,9 @@ fn main() -> Result<(), anyhow::Error> {
                     number_of_tracks = 0;
                     duration = None;
                     lcd.clear();
-                    lcd.write_ascii(
+                    lcd.write_line(
                         lcd_screen::LCDLineNumbers::Line1,
-                        0,
+                        lcd_screen::LCDLineNumbers::LINE1_DATA_CHAR_COUNT,
                         format!("No station {}", current_channel).as_str(),
                     );
                     lcd.write_volume(pipe_line_state, volume);
@@ -121,18 +121,13 @@ fn main() -> Result<(), anyhow::Error> {
                             lcd.write_line(
                                 lcd_screen::LCDLineNumbers::Line1,
                                 lcd_screen::LCDLineNumbers::LINE1_DATA_CHAR_COUNT,
-                                format!(
-                                    "{Thestring:<Width$.Width$}",
-                                    Thestring = current_channel.as_str(),
-                                    Width = lcd_screen::LCDLineNumbers::LINE1_DATA_CHAR_COUNT
-                                )
-                                .as_str(),
+                                current_channel.as_str(),
                             );
                             println!("current_channel {}", current_channel);
                             station_title = station.title.unwrap_or_else(|| "".to_string());
                             lcd.write_line(
                                 lcd_screen::LCDLineNumbers::Line2,
-                                lcd_screen::LCDLineNumbers::NUM_CHARACTERS_PER_LINE as usize,
+                                lcd_screen::LCDLineNumbers::NUM_CHARACTERS_PER_LINE,
                                 station_title.as_str(),
                             )
                         }
@@ -141,7 +136,7 @@ fn main() -> Result<(), anyhow::Error> {
                         current_track_index = current_track_index_in;
                         lcd.write_line(
                             lcd_screen::LCDLineNumbers::Line2,
-                            lcd_screen::LCDLineNumbers::NUM_CHARACTERS_PER_LINE as usize,
+                            lcd_screen::LCDLineNumbers::NUM_CHARACTERS_PER_LINE,
                             format!(
                                 "CD track {} of {}",
                                 current_track_index + 1,
@@ -156,8 +151,8 @@ fn main() -> Result<(), anyhow::Error> {
                                 "current track_tags{:?}, current_tract_index{}",
                                 track_tags, current_track_index
                             );
-                            if let Some(ye_organisation_from_tag) = track_tags.organisation {
-                                station_title = ye_organisation_from_tag;
+                            if let Some(organisation_from_tag) = track_tags.organisation {
+                                station_title = organisation_from_tag;
                                 let message = if current_track_index == 0 {
                                     station_title
                                 } else {
@@ -165,7 +160,7 @@ fn main() -> Result<(), anyhow::Error> {
                                 };
                                 lcd.write_line(
                                     lcd_screen::LCDLineNumbers::Line2,
-                                    lcd_screen::LCDLineNumbers::NUM_CHARACTERS_PER_LINE as usize,
+                                    lcd_screen::LCDLineNumbers::NUM_CHARACTERS_PER_LINE,
                                     message.as_str(),
                                 )
                             }
@@ -173,7 +168,7 @@ fn main() -> Result<(), anyhow::Error> {
                             println!("ye_tag_title {}", song_title);
                             lcd.write_multiline(
                                 lcd_screen::LCDLineNumbers::Line3,
-                                lcd_screen::LCDLineNumbers::NUM_CHARACTERS_PER_LINE as usize * 2,
+                                lcd_screen::LCDLineNumbers::NUM_CHARACTERS_PER_LINE * 2,
                                 song_title.as_str(),
                             )
                         }
@@ -183,9 +178,7 @@ fn main() -> Result<(), anyhow::Error> {
                         lcd.write_volume(pipe_line_state, volume);
                     }
                     if let Some(buffering) = diff.buffering {
-                        if song_title.len()
-                            <= lcd_screen::LCDLineNumbers::NUM_CHARACTERS_PER_LINE as usize
-                        {
+                        if song_title.len() <= lcd_screen::LCDLineNumbers::NUM_CHARACTERS_PER_LINE {
                             match error_state {
                                 ErrorState::NoError => {
                                     lcd.write_buffer_state(buffering);
@@ -223,7 +216,7 @@ fn main() -> Result<(), anyhow::Error> {
                 }
             }
         }
-        lcd.clear();
+        lcd.clear(); //we are ending the program if we get to here
         lcd.write_ascii(lcd_screen::LCDLineNumbers::Line1, 0, "Ending screen driver");
         lcd.write_multiline(
             lcd_screen::LCDLineNumbers::Line3,
