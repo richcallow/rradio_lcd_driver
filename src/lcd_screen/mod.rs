@@ -14,19 +14,19 @@ pub enum LCDLineNumbers {
 }
 
 impl LCDLineNumbers {
-    pub const NUM_CHARACTERS_PER_LINE: u8 = 20; //the display is visually 20 * 4 characters
+    pub const NUM_CHARACTERS_PER_LINE: usize = 20; //the display is visually 20 * 4 characters
     pub const ROW_OFFSET: u8 = 0x40; //specified by the chip
 
     pub const VOLUME_CHAR_COUNT: usize = 7;
     pub const LINE1_DATA_CHAR_COUNT: usize =
-        Self::NUM_CHARACTERS_PER_LINE as usize - Self::VOLUME_CHAR_COUNT;
+        Self::NUM_CHARACTERS_PER_LINE - Self::VOLUME_CHAR_COUNT;
 
     fn offset(self) -> u8 {
         match self {
             LCDLineNumbers::Line1 => 0,
             LCDLineNumbers::Line2 => Self::ROW_OFFSET,
-            LCDLineNumbers::Line3 => Self::NUM_CHARACTERS_PER_LINE,
-            LCDLineNumbers::Line4 => Self::ROW_OFFSET + Self::NUM_CHARACTERS_PER_LINE,
+            LCDLineNumbers::Line3 => Self::NUM_CHARACTERS_PER_LINE as u8,
+            LCDLineNumbers::Line4 => Self::ROW_OFFSET + Self::NUM_CHARACTERS_PER_LINE as u8,
         }
     }
     fn next(self) -> Self {
@@ -56,8 +56,11 @@ pub struct LcdScreen {
 
 impl LcdScreen {
     pub fn new() -> anyhow::Result<Self> {
-        let pins_src = std::fs::read_to_string("/boot/wiring_pins.toml")
-            .context("Failed to read GPIO pin declarations file")?;
+        let wiring_pins_file: String = "/boot/wiring_pins.toml".to_string();
+        let pins_src = std::fs::read_to_string(&wiring_pins_file).context(format!(
+            "Failed to read GPIO pin declarations file {}",
+            wiring_pins_file
+        ))?;
 
         let pins: PinDeclarations =
             toml::from_str(&pins_src).context("Failed to parse GPIO pin declarations file")?;
@@ -84,19 +87,19 @@ impl LcdScreen {
         self.lcd.clear();
         std::thread::sleep(std::time::Duration::from_millis(3));
     }
-
     pub fn write_buffer_state(&mut self, buffer_position: u8) {
+        // writes the state of the gstreamer buffer on the 4th line as amoving cursor
         self.lcd
             .seek(clerk::SeekFrom::Home(LCDLineNumbers::Line4.offset()));
-        let trimmed_buffer = buffer_position.min(99); //0 to 100 is 101 values, & the screen only handles 100 values, so trim downwards
+        let trimmed_buffer = buffer_position.min(99); // 0 to 100 is 101 values, & the screen only handles 100 values, so trim downwards
         #[allow(clippy::cast_possible_wrap)]
-        let scaled_buffer = (trimmed_buffer / 5) as i8; //the characters have 5 columns
+        let scaled_buffer = (trimmed_buffer / 5) as i8; // the characters have 5 columns
         for _count in 0..scaled_buffer {
-            self.lcd.write(' ' as u8); //first write space in all the character positions before the cursor
+            self.lcd.write(' ' as u8); // first write space in all the character positions before the cursor
         }
-        self.lcd.write((trimmed_buffer % 5) as u8); //then write the apppriate cursor character in the next position
+        self.lcd.write((trimmed_buffer % 5) as u8); // then write the apppriate cursor character in the next position
         for _count in scaled_buffer + 1..20 {
-            self.lcd.write(' ' as u8); //then clear the rest of the line
+            self.lcd.write(' ' as u8); // then clear the rest of the line
         }
     }
 
@@ -107,7 +110,7 @@ impl LcdScreen {
             self.lcd.write(character as u8);
         }
     }
-    pub fn write_utf8(&mut self, line: LCDLineNumbers, position: u8, string: &str) {
+    /*pub fn write_utf8(&mut self, line: LCDLineNumbers, position: u8, string: &str) {
         self.lcd
             .seek(clerk::SeekFrom::Home(line.offset() + position));
         for unicode_character in string.chars() {
@@ -121,7 +124,7 @@ impl LcdScreen {
                     'à' => &[7], // a grave
                     'ä' => &[0xE1], // a umlaut            // see look up table in GDM2004D.pdf page 9/9
                     'ñ' => &[0xEE], // n tilde
-                    'ö' => &[0xEF], // o umlaut
+                    'ö' => &[0xEF], // o umlaut++
                     'ü' => &[0xF5], // u umlaut
                     'π' => &[0xE4], // pi
                     'µ' => &[0xF7], // mu
@@ -134,8 +137,31 @@ impl LcdScreen {
                 }
             }
         }
+    }*/
+    pub fn write_with_scroll(
+        &mut self,
+        line: LCDLineNumbers,
+        length: usize,
+        string: &str,
+        position: &mut usize,
+    ) {
+        for i in *position + 1..*position + 6 {
+            // scroll to the next space, if it is reasonably soon
+            if string.as_bytes()[i] == ' ' as u8 {
+                *position = i;
+                break;
+            }
+        }
+        *position += 1; // Advance past the space (if the "for" loop found one), else advance 1 character
+        if (*position > string.len() - 9) || *position > length {
+            // If we are alsmost at the end of the start again. Also ensure that position remains in bounds
+            *position = 0;
+        }
+        self.write_multiline(line, length, &string[*position..])
     }
+
     pub fn write_line(&mut self, line: LCDLineNumbers, length: usize, string: &str) {
+        // writes up to one line correctly; end pads with spaces if too long, shortens if too short
         self.lcd.seek(clerk::SeekFrom::Home(line.offset()));
         let string_to_output = format!(
             "{Thestring:<Width$.Width$}",
@@ -170,7 +196,7 @@ impl LcdScreen {
     pub fn write_multiline(&mut self, mut line: LCDLineNumbers, length: usize, string: &str) {
         self.lcd.seek(clerk::SeekFrom::Home(line.offset()));
         let string_to_output = format!(
-            "{Thestring:<Width$.Width$}",
+            "{Thestring:<Width$.Width$}", // todo bug this does not handle UTF8 characters that are expanded later on to more than one octet
             Thestring = string,
             Width = length
         );
@@ -180,7 +206,7 @@ impl LcdScreen {
                 // characters lower than ~ are handled by the built-in character set
                 self.lcd.write(unicode_character as u8);
                 num_characters_written += 1;
-                if num_characters_written >= LCDLineNumbers::NUM_CHARACTERS_PER_LINE {
+                if num_characters_written >= LCDLineNumbers::NUM_CHARACTERS_PER_LINE as u8 {
                     num_characters_written = 0;
                     line = line.next();
                     self.lcd.seek(clerk::SeekFrom::Home(line.offset()));
@@ -203,7 +229,7 @@ impl LcdScreen {
                 for octet in ascii_character_bytes {
                     self.lcd.write(*octet);
                     num_characters_written += 1;
-                    if num_characters_written >= LCDLineNumbers::NUM_CHARACTERS_PER_LINE {
+                    if num_characters_written >= LCDLineNumbers::NUM_CHARACTERS_PER_LINE as u8 {
                         num_characters_written = 0;
                         line = line.next();
                         self.lcd.seek(clerk::SeekFrom::Home(line.offset()));
@@ -213,6 +239,7 @@ impl LcdScreen {
         }
     }
     pub fn write_volume(&mut self, pipe_line_state: PipelineState, volume: i32) {
+        // outputs the volume (or the gstreamer state if not playing) to the LCD screen
         let message = if pipe_line_state == PipelineState::Playing && volume >= 0 {
             format!(
                 "Vol{:>Width$.Width$}",
@@ -224,7 +251,7 @@ impl LcdScreen {
                 "{:<Width$.Width$}",
                 pipe_line_state.to_string(),
                 Width = LCDLineNumbers::VOLUME_CHAR_COUNT
-            ) //if we use  next_state.pipeline_state.to_string() without the .to_string, the result can be less than 7 characters long
+            ) // if we use pipeline_state.to_string() without the .to_string, the result can be less than 7 characters long
         };
         self.write_ascii(
             LCDLineNumbers::Line1,
@@ -233,9 +260,10 @@ impl LcdScreen {
         );
     }
     pub fn write_time_of_day(&mut self) {
+        // writes the time od day to line 3
         self.write_line(
             LCDLineNumbers::Line3,
-            LCDLineNumbers::NUM_CHARACTERS_PER_LINE as usize,
+            LCDLineNumbers::NUM_CHARACTERS_PER_LINE,
             Local::now()
                 .format("  %d %b %y %H:%M:%SS")
                 .to_string()
