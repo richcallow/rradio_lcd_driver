@@ -64,7 +64,7 @@ impl LcdScreen {
 
         let pins: PinDeclarations =
             toml::from_str(&pins_src).context("Failed to parse GPIO pin declarations file")?;
-        println!("GPIO pins {:?}", pins);
+        log::info!("GPIO pins {:?}", pins);
         let mut chip = gpio_cdev::Chip::new("/dev/gpiochip0")
             .context("Failed to open GPIO character device")?; // no delay needed here
         let mut lcd = pins
@@ -79,7 +79,7 @@ impl LcdScreen {
             }
         }
         lcd.seek(clerk::SeekFrom::Home(LCDLineNumbers::Line1.offset())); //say all future writes will be characters to be displayed.
-        println!("Initialised LCD screen");
+        log::info!("Initialised LCD screen");
         Ok(Self { lcd })
     }
 
@@ -161,7 +161,7 @@ impl LcdScreen {
     }
 
     pub fn write_line(&mut self, line: LCDLineNumbers, length: usize, string: &str) {
-        // writes up to one line correctly; end pads with spaces if too long, shortens if too short
+        // writes up to one line correctly; end pads with spaces if too short, shortens if too long
         self.lcd.seek(clerk::SeekFrom::Home(line.offset()));
         let string_to_output = format!(
             "{Thestring:<Width$.Width$}",
@@ -331,6 +331,6 @@ fn get_line(
         .get_line(offset)
         .with_context(|| format!("Failed to get GPIO pin for {:?}", consumer))?
         .request(gpio_cdev::LineRequestFlags::OUTPUT, 0, consumer)
-        .with_context(|| format!("GPIO pin for {:?} already in use. Are running another copy of the program elsewhere?", consumer))?;
+        .with_context(|| format!("GPIO pin for {:?} already in use. Are you running another copy of the program elsewhere?", consumer))?;
     Ok(hal::Line::new(handle))
 }

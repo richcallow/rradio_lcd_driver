@@ -11,7 +11,9 @@ anyhow = "1.0"
 clerk = "0.4" # lcd_screen
 hex = "0.4.2"
 gpio-cdev = "0.4" # lcd_screen
+log = "0.4"
 pnet = "0.26.0"             # used to get the local IP address
+pretty_env_logger = "0.4"
 rmp-serde = "0.14"
 rradio-messages = { git = "https://github.com/sammhicks/internet-radio-rs" }
 serde = { version = "1.0", features = ["derive", "rc"] }

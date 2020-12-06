@@ -1,4 +1,5 @@
 use anyhow::Context;
+use chrono::Local;
 use rradio_messages::PipelineState;
 use smol::io::AsyncReadExt;
 
@@ -8,14 +9,19 @@ mod lcd_screen;
 
 type Event = rradio_messages::Event<String, String, Vec<rradio_messages::Track>>;
 
-enum ErrorState {
+pub enum ErrorState {
     NotKnown,
     NoError,
     /////ErrorVarious,
     NoStation,
+    CdError,
+    GStreamerError,
+    ProgrammerError,
 }
 
 fn main() -> Result<(), anyhow::Error> {
+    pretty_env_logger::init(); // options are error, warn, info, debug or trace eg RUST_LOG=info cargo run or RUST_LOG=rradio_lcd_driver=info cargo run
+
     let mut error_state = ErrorState::NotKnown;
     let mut lcd = lcd_screen::LcdScreen::new()
         .context("Failed to initialize LCD screen")
@@ -36,6 +42,8 @@ fn main() -> Result<(), anyhow::Error> {
     );
 
     smol::block_on(async move {
+        let mut started_up = false;
+
         let mut pipe_line_state: PipelineState = PipelineState::VoidPending;
         let mut volume: i32 = -1;
         let mut current_track_index: usize = 0;
@@ -47,6 +55,8 @@ fn main() -> Result<(), anyhow::Error> {
         let mut num_of_scrolls_received: i32 = 0;
         let mut station_name_scroll_position: usize = 0;
         let mut song_title_scroll_position: usize = 0;
+        let mut station_type: rradio_messages::StationType = rradio_messages::StationType::CD;
+        let mut got_error = false;
 
         let mut connection = smol::net::TcpStream::connect((std::net::Ipv4Addr::LOCALHOST, 8002))
             .await
@@ -106,7 +116,15 @@ fn main() -> Result<(), anyhow::Error> {
                             } else {
                                 num_of_scrolls_received += 1; // no need to increment once we have reached the limit & this way we cannot overflow
                             }
+                            if !started_up {
+                                lcd.write_ascii(
+                                    lcd_screen::LCDLineNumbers::Line4,
+                                    15,
+                                    Local::now().format("%H:%M").to_string().as_str(),
+                                )
+                            }
                         }
+                        ErrorState::CdError => println!("CD Error"),
                         _ => println!("got unexpected error state"),
                     }
 
@@ -124,55 +142,118 @@ fn main() -> Result<(), anyhow::Error> {
                 .await
                 .context("Could not read event")?;
 
-            //println!("length {},   {:?}", message_length, buffer);
+            log::trace!("length {},   {:?}", message_length, buffer);
 
             let event: Event = rmp_serde::from_slice(&buffer).unwrap();
 
-            //println!("Event: {:?}", event);
+            log::debug!("Event: {:?}", event);
+
+            if !started_up {
+                if let Event::PlayerStateChanged(rradio_messages::PlayerStateDiff {
+                    current_station: rradio_messages::OptionDiff::ChangedToSome(_),
+                    ..
+                }) = &event
+                {
+                    started_up = true;
+                }
+            }
 
             match event {
-                Event::ProtocolVersion(version) => assert_eq!(version, rradio_messages::VERSION),
-                Event::LogMessage(log_message) => {
-                    error_state = ErrorState::NoStation;
-                    println!("aaaaaa{:?}", log_message);
-                    current_channel = "??".to_string(); //todo zzz need the real channel
-                    song_title = "".to_string();
-                    station_title = "".to_string();
-                    current_track_index = 0;
-                    number_of_tracks = 0;
-                    duration = None;
-                    num_of_scrolls_received = 0;
-                    station_name_scroll_position = 0;
-                    song_title_scroll_position = 0;
-                    lcd.clear();
+                Event::ProtocolVersion(version) => {
                     lcd.write_line(
-                        lcd_screen::LCDLineNumbers::Line1,
-                        lcd_screen::LCDLineNumbers::LINE1_DATA_CHAR_COUNT,
-                        format!("No station {}", current_channel).as_str(),
+                        lcd_screen::LCDLineNumbers::Line3,
+                        lcd_screen::LCDLineNumbers::NUM_CHARACTERS_PER_LINE,
+                        format!("Version {}", version).as_str(),
                     );
-                    lcd.write_volume(pipe_line_state, volume);
-                    lcd.write_ascii(
-                        lcd_screen::LCDLineNumbers::Line4,
-                        0,
-                        &format!("CPU Temp {} C", get_temperature::get_cpu_temperature()),
-                    );
-                    lcd.write_time_of_day();
+                    assert_eq!(version, rradio_messages::VERSION)
                 }
-                Event::PlayerStateChanged(diff) => {
-                    if let Some(pipeline_state) = diff.pipeline_state {
-                        pipe_line_state = pipeline_state;
-                        lcd.write_volume(pipe_line_state, volume);
+                Event::LogMessage(log_message) => match log_message {
+                    rradio_messages::LogMessage::Error(error_message) => {
+                        got_error = true;
+                        println!("Error message: {}", error_message);
+                        let displayed_error_message = match error_message {
+                            rradio_messages::Error::NoPlaylist
+                            | rradio_messages::Error::InvalidTrackIndex(..) => {
+                                error_state = ErrorState::ProgrammerError;
+                                "Programmer Error"
+                            }
+                            rradio_messages::Error::PipelineError(..) => {
+                                error_state = ErrorState::GStreamerError;
+                                "GStreamer Error"
+                            }
+                            rradio_messages::Error::StationError(
+                                rradio_messages::StationError::CdError(cderr),
+                            ) => {
+                                error_state = ErrorState::CdError;
+                                println!("CD ERRRR {:?}", cderr);
+                                /*match cderr {
+                                    rradio_messages::StationError::CdError::CannotOpenDevice => {
+                                        println!("cannot open")
+                                    }
+                                    _ => {}
+                                }*/
+                                "CD error  but what"
+                            }
+                            rradio_messages::Error::StationError(
+                                rradio_messages::StationError::StationNotFound { index, .. },
+                            ) => {
+                                error_state = ErrorState::NoStation;
+                                current_channel = index;
+                                song_title = "".to_string();
+                                station_title = "".to_string();
+                                current_track_index = 0;
+                                number_of_tracks = 0;
+                                duration = None;
+                                num_of_scrolls_received = 0;
+                                station_name_scroll_position = 0;
+                                song_title_scroll_position = 0;
+                                lcd.clear();
+                                lcd.write_line(
+                                    lcd_screen::LCDLineNumbers::Line1,
+                                    lcd_screen::LCDLineNumbers::LINE1_DATA_CHAR_COUNT,
+                                    format!("No station {}", current_channel).as_str(),
+                                );
+                                lcd.write_ascii(
+                                    lcd_screen::LCDLineNumbers::Line4,
+                                    0,
+                                    &format!(
+                                        "CPU Temp {} C",
+                                        get_temperature::get_cpu_temperature()
+                                    ),
+                                );
+                                lcd.write_time_of_day();
+                                continue;
+                            }
+                            _ => continue,
+                        };
+                        println!("got error message {}", displayed_error_message);
+                        lcd.write_ascii(
+                            lcd_screen::LCDLineNumbers::Line1,
+                            0,
+                            displayed_error_message,
+                        )
                     }
+                },
+                Event::PlayerStateChanged(diff) => {
+                    got_error = false;
                     if let Some(current_station) = diff.current_station.into_option() {
-                        lcd.clear();
+                        if started_up {
+                            lcd.clear()
+                        };
                         duration = None;
                         error_state = ErrorState::NoError;
                         song_title = "".to_string();
                         num_of_scrolls_received = 0;
                         station_name_scroll_position = 0;
                         song_title_scroll_position = 0;
+                        current_track_index = 0;
                         if let Some(station) = current_station {
-                            number_of_tracks = station.tracks.len();
+                            station_type = station.source_type;
+                            number_of_tracks = station
+                                .tracks
+                                .iter()
+                                .filter(|track| !track.is_notification)
+                                .count();
                             println!(
                                 "Current Station{:?} with {} tracks",
                                 station, number_of_tracks
@@ -180,10 +261,35 @@ fn main() -> Result<(), anyhow::Error> {
 
                             current_channel = station.index.unwrap_or_else(|| "??".to_string());
 
+                            let message = match station_type {
+                                rradio_messages::StationType::CD => {
+                                    lcd.write_line(
+                                        lcd_screen::LCDLineNumbers::Line2,
+                                        lcd_screen::LCDLineNumbers::NUM_CHARACTERS_PER_LINE,
+                                        format!(
+                                            "CD track {} of {}",
+                                            current_track_index + 1,
+                                            number_of_tracks
+                                        )
+                                        .as_str(),
+                                    );
+                                    "Playing CD ".to_string()
+                                }
+                                rradio_messages::StationType::USB => {
+                                    format!("USB {}", &current_channel)
+                                }
+                                rradio_messages::StationType::UrlList => {
+                                    format!("Station {}", &current_channel)
+                                }
+                                rradio_messages::StationType::FileServer => {
+                                    format!("{}", &current_channel)
+                                }
+                            };
+
                             lcd.write_line(
                                 lcd_screen::LCDLineNumbers::Line1,
                                 lcd_screen::LCDLineNumbers::LINE1_DATA_CHAR_COUNT,
-                                current_channel.as_str(),
+                                message.as_str(),
                             );
                             println!("current_channel {}", current_channel);
                             let st = station.title.unwrap_or_else(|| "".to_string());
@@ -194,25 +300,35 @@ fn main() -> Result<(), anyhow::Error> {
                                 format!("{} {}", current_track_index + 1, st)
                             };
 
-                            lcd.write_line(
-                                lcd_screen::LCDLineNumbers::Line2,
-                                lcd_screen::LCDLineNumbers::NUM_CHARACTERS_PER_LINE,
-                                station_title.as_str(),
-                            )
+                            if started_up {
+                                lcd.write_line(
+                                    lcd_screen::LCDLineNumbers::Line2,
+                                    lcd_screen::LCDLineNumbers::NUM_CHARACTERS_PER_LINE,
+                                    station_title.as_str(),
+                                )
+                            }
                         }
                     }
                     if let Some(current_track_index_in) = diff.current_track_index {
                         current_track_index = current_track_index_in;
-                        lcd.write_line(
-                            lcd_screen::LCDLineNumbers::Line2,
-                            lcd_screen::LCDLineNumbers::NUM_CHARACTERS_PER_LINE,
-                            format!(
-                                "CD track {} of {}",
-                                current_track_index + 1,
-                                number_of_tracks
-                            )
-                            .as_str(),
-                        );
+                        if started_up {
+                            match station_type {
+                                rradio_messages::StationType::CD => {
+                                    lcd.write_line(
+                                        lcd_screen::LCDLineNumbers::Line2,
+                                        lcd_screen::LCDLineNumbers::NUM_CHARACTERS_PER_LINE,
+                                        format!(
+                                            "CD track {} of {}",
+                                            current_track_index + 1,
+                                            number_of_tracks
+                                        )
+                                        .as_str(),
+                                    );
+                                }
+
+                                _ => {}
+                            }
+                        }
                         num_of_scrolls_received = 0;
                         station_name_scroll_position = 0;
                         song_title_scroll_position = 0;
@@ -229,19 +345,23 @@ fn main() -> Result<(), anyhow::Error> {
                                 } else {
                                     format!("{} {}", current_track_index + 1, organisation_from_tag)
                                 };
-                                lcd.write_line(
-                                    lcd_screen::LCDLineNumbers::Line2,
-                                    lcd_screen::LCDLineNumbers::NUM_CHARACTERS_PER_LINE,
-                                    station_title.as_str(),
-                                )
+                                if started_up {
+                                    lcd.write_line(
+                                        lcd_screen::LCDLineNumbers::Line2,
+                                        lcd_screen::LCDLineNumbers::NUM_CHARACTERS_PER_LINE,
+                                        station_title.as_str(),
+                                    )
+                                }
                             }
                             song_title = track_tags.title.unwrap_or_else(|| "".to_string());
                             println!("ye_tag_title {}", song_title);
-                            lcd.write_multiline(
-                                lcd_screen::LCDLineNumbers::Line3,
-                                lcd_screen::LCDLineNumbers::NUM_CHARACTERS_PER_LINE * 2,
-                                song_title.as_str(),
-                            );
+                            if started_up {
+                                lcd.write_multiline(
+                                    lcd_screen::LCDLineNumbers::Line3,
+                                    lcd_screen::LCDLineNumbers::NUM_CHARACTERS_PER_LINE * 2,
+                                    song_title.as_str(),
+                                );
+                            }
                             num_of_scrolls_received = 0;
                             station_name_scroll_position = 0;
                             song_title_scroll_position = 0;
@@ -251,11 +371,20 @@ fn main() -> Result<(), anyhow::Error> {
                         volume = volume_in;
                         lcd.write_volume(pipe_line_state, volume);
                     }
+                    if let Some(pipeline_state) = diff.pipeline_state {
+                        pipe_line_state = pipeline_state;
+                        if let ErrorState::NoError = error_state {
+                            lcd.write_volume(pipe_line_state, volume)
+                        }
+                    }
+
                     if let Some(buffering) = diff.buffering {
                         if song_title.len() <= lcd_screen::LCDLineNumbers::NUM_CHARACTERS_PER_LINE {
                             match error_state {
                                 ErrorState::NoError => {
-                                    lcd.write_buffer_state(buffering);
+                                    if started_up {
+                                        lcd.write_buffer_state(buffering);
+                                    }
                                 }
                                 _ => {}
                             }
@@ -269,18 +398,26 @@ fn main() -> Result<(), anyhow::Error> {
                             if pipe_line_state == rradio_messages::PipelineState::Playing {
                                 match error_state {
                                     ErrorState::NoError => {
-                                        lcd.write_line(
-                                            lcd_screen::LCDLineNumbers::Line1,
-                                            lcd_screen::LCDLineNumbers::LINE1_DATA_CHAR_COUNT
-                                                as usize,
-                                            format!(
-                                                "{}, {} of {}",
-                                                current_track_index + 1, //humans count from 1
-                                                position.as_secs(),
-                                                duration.as_secs()
-                                            )
-                                            .as_str(),
-                                        )
+                                        let track_index = current_track_index + 1; //humans count from 1
+                                        let position_secs = position.as_secs();
+                                        let duration_secs = duration.as_secs();
+                                        // let mut number_of_digits;
+                                        let track_index_digit_count =
+                                            if track_index < 10 { 1 } else { 2 };
+
+                                        let position_secs_digit_count = match position_secs {
+                                            0..=9 => 1,
+                                            10..=99 => 2,
+                                            100..=999 => 3,
+                                            _ => 4,
+                                        };
+
+                                        let duration_secs_digit_count = match duration_secs {
+                                            0..=9 => 1,
+                                            10..=99 => 2,
+                                            100..=999 => 3,
+                                            _ => 4,
+                                        };
                                     }
                                     _ => {}
                                 }
