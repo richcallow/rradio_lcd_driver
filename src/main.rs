@@ -1,14 +1,13 @@
 use anyhow::Context;
-use chrono::Local;
 use rradio_messages::PipelineState;
 use smol::io::AsyncReadExt;
 
 mod get_local_ip_address;
-mod get_temperature;
 mod lcd_screen;
 
 type Event = rradio_messages::Event<String, String, Vec<rradio_messages::Track>>;
 
+#[derive(PartialEq)]
 pub enum ErrorState {
     NotKnown,
     NoError,
@@ -35,11 +34,7 @@ fn main() -> Result<(), anyhow::Error> {
         0,
         get_local_ip_address::get_local_ip_address().as_str(),
     );
-    lcd.write_ascii(
-        lcd_screen::LCDLineNumbers::Line4,
-        0,
-        &format!("CPU Temp {} C", get_temperature::get_cpu_temperature()),
-    );
+    lcd.write_temperature_and_time();
 
     smol::block_on(async move {
         let mut started_up = false;
@@ -84,12 +79,8 @@ fn main() -> Result<(), anyhow::Error> {
                 Err(timeout_time) => {
                     match error_state {
                         ErrorState::NoStation => {
-                            lcd.write_ascii(
-                                lcd_screen::LCDLineNumbers::Line4,
-                                0,
-                                &format!("CPU Temp {} C", get_temperature::get_cpu_temperature()),
-                            );
-                            lcd.write_time_of_day();
+                            lcd.write_temperature_line4();
+                            lcd.write_time_of_day_line3();
                         }
                         ErrorState::NoError => {
                             if num_of_scrolls_received >= number_scroll_events_before_scrolling {
@@ -117,11 +108,7 @@ fn main() -> Result<(), anyhow::Error> {
                                 num_of_scrolls_received += 1; // no need to increment once we have reached the limit & this way we cannot overflow
                             }
                             if !started_up {
-                                lcd.write_ascii(
-                                    lcd_screen::LCDLineNumbers::Line4,
-                                    15,
-                                    Local::now().format("%H:%M").to_string().as_str(),
-                                )
+                                lcd.write_temperature_and_time();
                             }
                         }
                         ErrorState::CdError => println!("CD Error"),
@@ -185,13 +172,12 @@ fn main() -> Result<(), anyhow::Error> {
                                 rradio_messages::StationError::CdError(cderr),
                             ) => {
                                 error_state = ErrorState::CdError;
-                                println!("CD ERRRR {:?}", cderr);
-                                /*match cderr {
-                                    rradio_messages::StationError::CdError::CannotOpenDevice => {
-                                        println!("cannot open")
-                                    }
+                                println!("CD ERRRR {}", cderr);
+                                match cderr {
+                                    //rradio_messages::CdError(s,m) => {}
+                                    //CdError::CannotOpenDevice => println!("cannot open"),
                                     _ => {}
-                                }*/
+                                }
                                 "CD error  but what"
                             }
                             rradio_messages::Error::StationError(
@@ -213,15 +199,8 @@ fn main() -> Result<(), anyhow::Error> {
                                     lcd_screen::LCDLineNumbers::LINE1_DATA_CHAR_COUNT,
                                     format!("No station {}", current_channel).as_str(),
                                 );
-                                lcd.write_ascii(
-                                    lcd_screen::LCDLineNumbers::Line4,
-                                    0,
-                                    &format!(
-                                        "CPU Temp {} C",
-                                        get_temperature::get_cpu_temperature()
-                                    ),
-                                );
-                                lcd.write_time_of_day();
+                                lcd.write_temperature_line4();
+                                lcd.write_time_of_day_line3();
                                 continue;
                             }
                             _ => continue,
@@ -258,7 +237,6 @@ fn main() -> Result<(), anyhow::Error> {
                                 "Current Station{:?} with {} tracks",
                                 station, number_of_tracks
                             );
-
                             current_channel = station.index.unwrap_or_else(|| "??".to_string());
 
                             let message = match station_type {
@@ -297,7 +275,7 @@ fn main() -> Result<(), anyhow::Error> {
                             station_title = if current_track_index == 0 {
                                 st
                             } else {
-                                format!("{} {}", current_track_index + 1, st)
+                                format!("{} {}", current_track_index + 1, st) 
                             };
 
                             if started_up {
@@ -418,6 +396,33 @@ fn main() -> Result<(), anyhow::Error> {
                                             100..=999 => 3,
                                             _ => 4,
                                         };
+                                        let number_of_digits = track_index_digit_count
+                                            + position_secs_digit_count
+                                            + duration_secs_digit_count;
+                                        let message = match number_of_digits {
+                                            0..=7 => format!(
+                                                "{}, {} of {}",
+                                                track_index, position_secs, duration_secs
+                                            ),
+                                            8 => format!(
+                                                "{},{} of {}",
+                                                track_index, position_secs, duration_secs
+                                            ),
+                                            9 => format!(
+                                                "{},{}of {}",
+                                                track_index, position_secs, duration_secs
+                                            ),
+                                            10 => format!(
+                                                "{}, {}of{}",
+                                                track_index, position_secs, duration_secs
+                                            ),
+                                            _ => format!("{}, {}", track_index, position_secs),
+                                        };
+                                        lcd.write_line(
+                                            lcd_screen::LCDLineNumbers::Line1,
+                                            lcd_screen::LCDLineNumbers::LINE1_DATA_CHAR_COUNT,
+                                            message.as_str(),
+                                        );
                                     }
                                     _ => {}
                                 }
