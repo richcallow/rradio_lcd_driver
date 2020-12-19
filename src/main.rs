@@ -35,6 +35,11 @@ fn main() -> Result<(), anyhow::Error> {
         get_local_ip_address::get_local_ip_address().as_str(),
     );
     lcd.write_temperature_and_time();
+    lcd.write_multiline(
+        lcd_screen::LCDLineNumbers::Line2,
+        lcd_screen::LCDLineNumbers::NUM_CHARACTERS_PER_LINE * 2,
+        format!("No connection to    internal server").as_str(),
+    );
 
     smol::block_on(async move {
         let mut started_up = false;
@@ -52,14 +57,29 @@ fn main() -> Result<(), anyhow::Error> {
         let mut song_title_scroll_position: usize = 0;
         let mut station_type: rradio_messages::StationType = rradio_messages::StationType::CD;
         let mut got_error = false;
-
-        let mut connection = smol::net::TcpStream::connect((std::net::Ipv4Addr::LOCALHOST, 8002))
-            .await
-            .context("Could not connect to server")?;
-
         let scroll_period = std::time::Duration::from_millis(1500);
         let number_scroll_events_before_scrolling: i32 = 4000 / scroll_period.as_millis() as i32;
         let mut last_scroll_time = std::time::Instant::now();
+
+        let mut connection = {
+            loop {
+                match smol::net::TcpStream::connect((std::net::Ipv4Addr::LOCALHOST, 8002)).await {
+                    Ok(c) => {
+                        lcd.write_multiline(
+                            //clear out the error message
+                            lcd_screen::LCDLineNumbers::Line2,
+                            lcd_screen::LCDLineNumbers::NUM_CHARACTERS_PER_LINE * 2,
+                            "",
+                        );
+                        break c;
+                    }
+                    Err(error) => {
+                        println!("Connection Error: {:?}", error);
+                        std::thread::sleep(std::time::Duration::from_millis(1000));
+                    }
+                }
+            }
+        };
 
         loop {
             let mut message_length_buffer = [0; 2];
@@ -162,11 +182,11 @@ fn main() -> Result<(), anyhow::Error> {
                             rradio_messages::Error::NoPlaylist
                             | rradio_messages::Error::InvalidTrackIndex(..) => {
                                 error_state = ErrorState::ProgrammerError;
-                                "Programmer Error"
+                                "Programmer Error".to_string()
                             }
                             rradio_messages::Error::PipelineError(..) => {
                                 error_state = ErrorState::GStreamerError;
-                                "GStreamer Error"
+                                "GStreamer Error".to_string()
                             }
                             rradio_messages::Error::StationError(
                                 rradio_messages::StationError::CdError(cderr),
@@ -174,11 +194,14 @@ fn main() -> Result<(), anyhow::Error> {
                                 error_state = ErrorState::CdError;
                                 println!("CD ERRRR {}", cderr);
                                 match cderr {
-                                    //rradio_messages::CdError(s,m) => {}
-                                    //CdError::CannotOpenDevice => println!("cannot open"),
-                                    _ => {}
+                                    rradio_messages::CdError::CannotOpenDevice(s) => {
+                                        format!("cant open {:?}", s)
+                                    }
+                                    rradio_messages::CdError::CdIsData1 => {
+                                        format!("CD is data1")
+                                    }
+                                    _ => ("not done yet".to_string()),
                                 }
-                                "CD error  but what"
                             }
                             rradio_messages::Error::StationError(
                                 rradio_messages::StationError::StationNotFound { index, .. },
@@ -206,10 +229,10 @@ fn main() -> Result<(), anyhow::Error> {
                             _ => continue,
                         };
                         println!("got error message {}", displayed_error_message);
-                        lcd.write_ascii(
+                        lcd.write_multiline(
                             lcd_screen::LCDLineNumbers::Line1,
-                            0,
-                            displayed_error_message,
+                            lcd_screen::LCDLineNumbers::NUM_CHARACTERS_PER_LINE * 4,
+                            &displayed_error_message,
                         )
                     }
                 },
@@ -263,7 +286,6 @@ fn main() -> Result<(), anyhow::Error> {
                                     format!("{}", &current_channel)
                                 }
                             };
-
                             lcd.write_line(
                                 lcd_screen::LCDLineNumbers::Line1,
                                 lcd_screen::LCDLineNumbers::LINE1_DATA_CHAR_COUNT,
@@ -275,7 +297,7 @@ fn main() -> Result<(), anyhow::Error> {
                             station_title = if current_track_index == 0 {
                                 st
                             } else {
-                                format!("{} {}", current_track_index + 1, st) 
+                                format!("{} {}", current_track_index + 1, st)
                             };
 
                             if started_up {
@@ -432,6 +454,7 @@ fn main() -> Result<(), anyhow::Error> {
                 }
             }
         }
+
         lcd.clear(); //we are ending the program if we get to here
         lcd.write_ascii(lcd_screen::LCDLineNumbers::Line1, 0, "Ending screen driver");
         lcd.write_multiline(
