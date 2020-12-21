@@ -38,7 +38,7 @@ fn main() -> Result<(), anyhow::Error> {
     lcd.write_multiline(
         lcd_screen::LCDLineNumbers::Line2,
         lcd_screen::LCDLineNumbers::NUM_CHARACTERS_PER_LINE * 2,
-        format!("No connection to    internal server").as_str(),
+        format!("No connection to    internal server").as_str(), // the spaces are intentional
     );
 
     smol::block_on(async move {
@@ -149,7 +149,7 @@ fn main() -> Result<(), anyhow::Error> {
                 .await
                 .context("Could not read event")?;
 
-            log::trace!("length {},   {:?}", message_length, buffer);
+            log::debug!("length {},   {:?}", message_length, buffer);
 
             let event: Event = rmp_serde::from_slice(&buffer).unwrap();
 
@@ -194,13 +194,55 @@ fn main() -> Result<(), anyhow::Error> {
                                 error_state = ErrorState::CdError;
                                 println!("CD ERRRR {}", cderr);
                                 match cderr {
-                                    rradio_messages::CdError::CannotOpenDevice(s) => {
-                                        format!("cant open {:?}", s)
+                                    rradio_messages::CdError::CannotOpenDevice(error_string) => {
+                                        let os_error = String::from("os error ");
+                                        let pos = error_string.find(os_error.as_str());
+                                        if let Some(mut position) = pos {
+                                            position += os_error.len();
+                                            let error_string_shortened = &error_string[position..];
+
+                                            match error_string_shortened {
+                                                "123)" => format!("No CD in drive"),
+                                                "2)" => format!("No CD drive"),
+                                                _ => {
+                                                    println!(
+                                                        "got unknown CD error {}",
+                                                        error_string_shortened
+                                                    );
+                                                    format!(
+                                                        "got unknown CD error {}",
+                                                        error_string_shortened
+                                                    )
+                                                }
+                                            }
+                                        } else {
+                                            format!("Could not identify the CD error")
+                                        }
                                     }
                                     rradio_messages::CdError::CdIsData1 => {
-                                        format!("CD is data1")
+                                        format!("This is a data CD so cannot play it. (Data type 1")
                                     }
-                                    _ => ("not done yet".to_string()),
+                                    rradio_messages::CdError::CdIsData2 => {
+                                        format!("This is a data CD so cannot play it. (Data type 2")
+                                    }
+                                    rradio_messages::CdError::CdIsXA21 => {
+                                        format!(
+                                            "This is a data CD so cannot play it. (Data type XA21"
+                                        )
+                                    }
+                                    rradio_messages::CdError::CdIsXA22 => {
+                                        format!(
+                                            "This is a data CD so cannot play it. (Data type XA22"
+                                        )
+                                    }
+                                    rradio_messages::CdError::UnknownDriveStatus(size) => {
+                                        format!("CD error unknown drive status {}", size)
+                                    }
+                                    rradio_messages::CdError::UnknownDiscStatus(size) => {
+                                        format!("CD error unknown disk status {}", size)
+                                    }
+
+                                    _ => ("CD Error not done coded".to_string()),
                                 }
                             }
                             rradio_messages::Error::StationError(
