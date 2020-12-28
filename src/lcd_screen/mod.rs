@@ -260,7 +260,7 @@ impl LcdScreen {
             message.as_str(),
         );
     }
-    pub fn write_time_of_day_line3(&mut self) {
+    pub fn write_date_and_time_of_day_line3(&mut self) {
         // writes the time of day to line 3
         self.write_line(
             LCDLineNumbers::Line3,
@@ -271,22 +271,25 @@ impl LcdScreen {
                 .as_str(),
         )
     }
-    pub fn write_temperature_line4(&mut self){
+    pub fn write_temperature_line4(&mut self) {
         //writes the temperature to line 4
-        self.write_line(LCDLineNumbers::Line4,14, &format!(
-            "CPU Temp {} C",
-            get_temperature::get_cpu_temperature()
-        ) )
+        self.write_line(
+            LCDLineNumbers::Line4,
+            14,
+            &format!("CPU Temp {} C", get_temperature::get_cpu_temperature()),
+        )
     }
-    pub fn write_temperature_and_time(&mut self){
+    pub fn write_temperature_and_time(&mut self) {
         //writes the temperature to line 4
-        self.write_line(LCDLineNumbers::Line4,LCDLineNumbers::NUM_CHARACTERS_PER_LINE, &format!(
-            "CPU Temp {} C {}",
-            get_temperature::get_cpu_temperature(), Local::now()
-            .format("%H:%M")
-            .to_string()
-            .as_str(),
-        ) )
+        self.write_line(
+            LCDLineNumbers::Line4,
+            LCDLineNumbers::NUM_CHARACTERS_PER_LINE,
+            &format!(
+                "CPU Temp {} C {}",
+                get_temperature::get_cpu_temperature(),
+                Local::now().format("%H:%M").to_string().as_str(),
+            ),
+        )
     }
 }
 
