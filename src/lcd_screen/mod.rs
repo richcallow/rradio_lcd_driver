@@ -160,6 +160,13 @@ impl LcdScreen {
         }
         self.write_multiline(line, length, &string[*position..])
     }
+    pub fn write_all_line_2(&mut self, string: &str) {
+        self.write_line(
+            LCDLineNumbers::Line2,
+            LCDLineNumbers::NUM_CHARACTERS_PER_LINE,
+            string,
+        );
+    }
 
     pub fn write_line(&mut self, line: LCDLineNumbers, length: usize, string: &str) {
         // writes up to one line correctly; end pads with spaces if too short, shortens if too long

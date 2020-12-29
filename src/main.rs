@@ -11,9 +11,9 @@ type Event = rradio_messages::Event<String, String, Vec<rradio_messages::Track>>
 pub enum ErrorState {
     NotKnown,
     NoError,
-    /////ErrorVarious,
     NoStation,
     CdError,
+    Usberror,
     GStreamerError,
     ProgrammerError,
 }
@@ -77,6 +77,7 @@ fn main() -> Result<(), anyhow::Error> {
                     }
                     Err(error) => {
                         println!("Connection Error: {:?}", error);
+                        lcd.write_temperature_and_time();
                         std::thread::sleep(std::time::Duration::from_millis(1000));
                     }
                 }
@@ -135,6 +136,7 @@ fn main() -> Result<(), anyhow::Error> {
                         }
                         ErrorState::NotKnown => println!("Error state: unknown"),
                         ErrorState::CdError => println!("Error state: CD Error"),
+                        ErrorState::Usberror => println!("Error state: USB Error"),
                         ErrorState::ProgrammerError => println!("Error state:: Programmer error"),
                         ErrorState::GStreamerError => println!("Error state:: Gstreamer error"),
                         //_ => println!("got unexpected error state {:?}", error_state),
@@ -177,7 +179,7 @@ fn main() -> Result<(), anyhow::Error> {
                         lcd_screen::LCDLineNumbers::NUM_CHARACTERS_PER_LINE,
                         format!("Version {}", version).as_str(),
                     );
-                    //assert_eq!(version, rradio_messages::VERSION)
+                    assert_eq!(version, rradio_messages::VERSION)
                 }
                 Event::LogMessage(log_message) => match log_message {
                     rradio_messages::LogMessage::Error(error_message) => {
@@ -262,6 +264,19 @@ fn main() -> Result<(), anyhow::Error> {
                                 }
                             }
                             rradio_messages::Error::StationError(
+                                rradio_messages::StationError::UsbError(usberr),
+                            ) => {
+                                error_state = ErrorState::Usberror;
+                                println!("USB ERRRR {:?}", usberr);
+                                match usberr {
+                                    rradio_messages::UsbError::UsbNotConnected => {
+                                        "No USB device".to_string()
+                                    }
+                                    _ => "Unknown USB error".to_string(),
+                                }
+                            }
+                            .to_string(),
+                            rradio_messages::Error::StationError(
                                 rradio_messages::StationError::StationNotFound { index, .. },
                             ) => {
                                 error_state = ErrorState::NoStation;
@@ -284,7 +299,10 @@ fn main() -> Result<(), anyhow::Error> {
                                 lcd.write_date_and_time_of_day_line3();
                                 continue;
                             }
-                            _ => continue,
+                            _ => {
+                                lcd.write_all_line_2("Got unhandled error");
+                                continue;
+                            }
                         };
                         println!("got error message {}", displayed_error_message);
                         lcd.write_multiline(
@@ -320,20 +338,42 @@ fn main() -> Result<(), anyhow::Error> {
                                 "Current Station{:?} with {} tracks",
                                 station, number_of_tracks
                             );
-                            current_channel = station.index.unwrap_or_else(|| "??".to_string());
 
+                            if number_of_tracks > 0 {
+                                let first_track = &station.tracks[0];
+                                {
+                                    if let Some(artist_from_track) = &first_track.artist {
+                                        artist = artist_from_track.to_string();
+                                        line2_text =
+                                            assembleline2(artist.to_string(), album.to_string());
+                                        lcd.write_all_line_2(&line2_text);
+                                        song_title_scroll_position = 0;
+                                    }
+                                    if let Some(album_from_track) = &first_track.album {
+                                        album = album_from_track.to_string();
+                                        line2_text =
+                                            assembleline2(artist.to_string(), album.to_string());
+                                        lcd.write_all_line_2(&line2_text);
+                                        song_title_scroll_position = 0;
+                                    }
+                                    if let Some(title_from_track) = &first_track.title {
+                                        song_title = title_from_track.to_string();
+                                        lcd.write_multiline(
+                                            lcd_screen::LCDLineNumbers::Line3,
+                                            lcd_screen::LCDLineNumbers::NUM_CHARACTERS_PER_LINE * 2,
+                                            song_title.as_str(),
+                                        );
+                                    }
+                                };
+                            }
+                            current_channel = station.index.unwrap_or_else(|| "??".to_string());
                             let message = match station_type {
                                 rradio_messages::StationType::CD => {
-                                    lcd.write_line(
-                                        lcd_screen::LCDLineNumbers::Line2,
-                                        lcd_screen::LCDLineNumbers::NUM_CHARACTERS_PER_LINE,
-                                        format!(
-                                            "CD track {} of {}",
-                                            current_track_index + 1,
-                                            number_of_tracks
-                                        )
-                                        .as_str(),
-                                    );
+                                    lcd.write_all_line_2(&format!(
+                                        "CD track {} of {}",
+                                        current_track_index + 1,
+                                        number_of_tracks
+                                    ));
                                     "Playing CD ".to_string()
                                 }
                                 rradio_messages::StationType::USB => {
@@ -352,7 +392,7 @@ fn main() -> Result<(), anyhow::Error> {
                                 message.as_str(),
                             );
                             //println!("current_channel {}", current_channel);
-                            let st = station.title.unwrap_or_else(|| "".to_string());
+                            let st = station.title.unwrap_or_else(|| line2_text);
 
                             line2_text = if current_track_index == 0 {
                                 st
@@ -361,11 +401,7 @@ fn main() -> Result<(), anyhow::Error> {
                             };
 
                             if started_up && line2_text.len() > 0 {
-                                lcd.write_line(
-                                    lcd_screen::LCDLineNumbers::Line2,
-                                    lcd_screen::LCDLineNumbers::NUM_CHARACTERS_PER_LINE,
-                                    line2_text.as_str(),
-                                )
+                                lcd.write_all_line_2(&line2_text)
                             }
                         } else {
                             got_station = false;
@@ -376,18 +412,12 @@ fn main() -> Result<(), anyhow::Error> {
                         if started_up {
                             match station_type {
                                 rradio_messages::StationType::CD => {
-                                    lcd.write_line(
-                                        lcd_screen::LCDLineNumbers::Line2,
-                                        lcd_screen::LCDLineNumbers::NUM_CHARACTERS_PER_LINE,
-                                        format!(
-                                            "CD track {} of {}.",
-                                            current_track_index + 1,
-                                            number_of_tracks
-                                        )
-                                        .as_str(),
-                                    );
+                                    lcd.write_all_line_2(&format!(
+                                        "CD track {} of {}.",
+                                        current_track_index + 1,
+                                        number_of_tracks
+                                    ));
                                 }
-
                                 _ => {}
                             }
                         }
@@ -408,41 +438,21 @@ fn main() -> Result<(), anyhow::Error> {
                                     format!("{} {}", current_track_index + 1, organisation_from_tag)
                                 };
                                 if started_up {
-                                    lcd.write_line(
-                                        lcd_screen::LCDLineNumbers::Line2,
-                                        lcd_screen::LCDLineNumbers::NUM_CHARACTERS_PER_LINE,
-                                        line2_text.as_str(),
-                                    )
+                                    lcd.write_all_line_2(&line2_text)
                                 }
                             }
                             if let Some(artist_from_tag) = track_tags.artist {
-                                if artist_from_tag.to_lowercase().starts_with("unknown") {
-                                    artist = "".to_string()
-                                } else {
-                                    artist = artist_from_tag;
-                                }
-                                line2_text = format!("{} / {}", artist, album);
+                                artist = artist_from_tag;
+                                line2_text = assembleline2(artist.to_string(), album.to_string());
                                 if line2_text.len() > 0 {
-                                    lcd.write_line(
-                                        lcd_screen::LCDLineNumbers::Line2,
-                                        lcd_screen::LCDLineNumbers::NUM_CHARACTERS_PER_LINE,
-                                        line2_text.as_str(),
-                                    )
+                                    lcd.write_all_line_2(&line2_text)
                                 }
                             }
                             if let Some(album_from_tag) = track_tags.album {
-                                if album_from_tag.to_lowercase().starts_with("unknown") {
-                                    album = "".to_string()
-                                } else {
-                                    album = album_from_tag;
-                                }
-                                line2_text = format!("{} / {}", artist, album);
+                                album = album_from_tag;
+                                line2_text = assembleline2(artist.to_string(), album.to_string());
                                 if line2_text.len() > 0 {
-                                    lcd.write_line(
-                                        lcd_screen::LCDLineNumbers::Line2,
-                                        lcd_screen::LCDLineNumbers::NUM_CHARACTERS_PER_LINE,
-                                        line2_text.as_str(),
-                                    )
+                                    lcd.write_all_line_2(&line2_text)
                                 }
                             }
 
@@ -557,11 +567,26 @@ fn main() -> Result<(), anyhow::Error> {
         lcd.write_ascii(lcd_screen::LCDLineNumbers::Line1, 0, "Ending screen driver");
         lcd.write_multiline(
             lcd_screen::LCDLineNumbers::Line3,
-            40,
+            lcd_screen::LCDLineNumbers::NUM_CHARACTERS_PER_LINE * 2,
             "Computer not shut   down",
         );
         println!("exiting screen driver");
 
         Ok(())
     })
+}
+fn assembleline2(mut artist: String, mut album: String) -> String {
+    if artist.to_lowercase().starts_with("unknown") {
+        artist = "".to_string()
+    }
+    if album.to_lowercase().starts_with("unknown") {
+        album = "".to_string()
+    }
+    if artist.len() == 0 {
+        album
+    } else if album.len() == 0 {
+        artist
+    } else {
+        format!("{} / {}", artist, album)
+    }
 }
