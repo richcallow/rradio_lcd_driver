@@ -1,4 +1,5 @@
 use anyhow::Context;
+use psutil::process::Process;
 use rradio_messages::PipelineState;
 use smol::io::AsyncReadExt;
 
@@ -19,15 +20,22 @@ pub enum ErrorState {
 }
 
 fn main() -> Result<(), anyhow::Error> {
-    pretty_env_logger::init(); // options are error, warn, info, debug or trace eg RUST_LOG=info cargo run or RUST_LOG=rradio_lcd_driver=info cargo run
+    try_to_kill_earlier_versions_of_lcd_screen_driver();
 
-    let mut error_state = ErrorState::NotKnown;
     let mut lcd = lcd_screen::LcdScreen::new()
         .context("Failed to initialize LCD screen")
         .map_err(|err| {
-            // Kill other screen drivers here
+            // Kill other screen drivers here & ourself too
+            let name_of_this_executable = std::env::current_exe()
+                .expect("Can't get the exec path")
+                .to_string_lossy()
+                .into_owned();
+            println!("in LCD screen: Process was already running so killing all processes called {} including ourself", name_of_this_executable);
+            std::process::Command::new("killall").arg(name_of_this_executable).spawn().expect("Failed to kill process");
             err
         })?;
+
+    pretty_env_logger::init(); // options are error, warn, info, debug or trace eg RUST_LOG=info cargo run or RUST_LOG=rradio_lcd_driver=info cargo run
 
     lcd.write_ascii(
         lcd_screen::LCDLineNumbers::Line1,
@@ -43,7 +51,7 @@ fn main() -> Result<(), anyhow::Error> {
 
     smol::block_on(async move {
         let mut started_up = false;
-
+        let mut error_state = ErrorState::NotKnown;
         let mut pipe_line_state: PipelineState = PipelineState::VoidPending;
         let mut volume: i32 = -1;
         let mut current_track_index: usize = 0;
@@ -181,10 +189,11 @@ fn main() -> Result<(), anyhow::Error> {
                     );
                     assert_eq!(version, rradio_messages::VERSION)
                 }
-                Event::LogMessage(log_message) => match log_message {
-                    rradio_messages::LogMessage::Error(error_message) => {
-                        println!("Error message: {}", error_message);
-                        let displayed_error_message = match error_message {
+                Event::LogMessage(log_message) => {
+                    match log_message {
+                        rradio_messages::LogMessage::Error(error_message) => {
+                            println!("Error message: {}", error_message);
+                            let displayed_error_message = match error_message {
                             rradio_messages::Error::NoPlaylist
                             | rradio_messages::Error::InvalidTrackIndex(..) => {
                                 error_state = ErrorState::ProgrammerError;
@@ -226,7 +235,7 @@ fn main() -> Result<(), anyhow::Error> {
                                         }
                                     }
                                     rradio_messages::CdError::CdNotEnabled => {
-                                        "CD support is not enabled".to_string()
+                                        "CD support is not enabled. You need to recompile".to_string()
                                     }
                                     rradio_messages::CdError::IoCtlError(s) => {
                                         format!("CD IOCTL error {:?}", s)
@@ -269,10 +278,26 @@ fn main() -> Result<(), anyhow::Error> {
                                 error_state = ErrorState::Usberror;
                                 println!("USB ERRRR {:?}", usberr);
                                 match usberr {
-                                    rradio_messages::UsbError::UsbNotConnected => {
-                                        "No USB device".to_string()
+                                    rradio_messages::UsbError::UsbNotEnabled => {
+                                        "USB not enabled. You need to recompile".to_string()
                                     }
-                                    _ => "Unknown USB error".to_string(),
+                                    rradio_messages::UsbError::CouldNotCreateTemporaryDirectory(
+                                        dir,
+                                    ) => format!("USB error: Could not create temporary directory {} ", dir),
+                                    rradio_messages::UsbError::CouldNotMountDevice {
+                                        device,
+                                        ..
+                                    } => format!("Could not mount device {} ", device),
+                                    rradio_messages::UsbError::UsbNotConnected => {
+                                        "No USB device found".to_string()
+                                    }
+
+                                    rradio_messages::UsbError::ErrorFindingTracks(s) => {
+                                        format!("USB error: Error finding tracks {}", s)
+                                    }
+                                    rradio_messages::UsbError::TracksNotFound => {
+                                        "USB error: Tracks not found".to_string()
+                                    }
                                 }
                             }
                             .to_string(),
@@ -299,19 +324,21 @@ fn main() -> Result<(), anyhow::Error> {
                                 lcd.write_date_and_time_of_day_line3();
                                 continue;
                             }
+                            //*********** TagError not covered */
                             _ => {
                                 lcd.write_all_line_2("Got unhandled error");
                                 continue;
                             }
                         };
-                        println!("got error message {}", displayed_error_message);
-                        lcd.write_multiline(
-                            lcd_screen::LCDLineNumbers::Line1,
-                            lcd_screen::LCDLineNumbers::NUM_CHARACTERS_PER_LINE * 4,
-                            &displayed_error_message,
-                        )
+                            println!("got error message {}", displayed_error_message);
+                            lcd.write_multiline(
+                                lcd_screen::LCDLineNumbers::Line1,
+                                lcd_screen::LCDLineNumbers::NUM_CHARACTERS_PER_LINE * 4,
+                                &displayed_error_message,
+                            )
+                        }
                     }
-                },
+                }
                 Event::PlayerStateChanged(diff) => {
                     if let Some(current_station) = diff.current_station.into_option() {
                         if started_up {
@@ -418,7 +445,7 @@ fn main() -> Result<(), anyhow::Error> {
                                         number_of_tracks
                                     ));
                                 }
-                                _ => {}
+                                _ => {} // patterns `UrlList`, `FileServer` and `USB` not covered
                             }
                         }
                         num_of_scrolls_received = 0;
@@ -492,7 +519,7 @@ fn main() -> Result<(), anyhow::Error> {
                                         _ => lcd.write_buffer_state(buffering),
                                     }
                                 }
-                                _ => {}
+                                _ => {} // here we only want to match the "no error condition"
                             }
                         }
                     }
@@ -506,7 +533,7 @@ fn main() -> Result<(), anyhow::Error> {
                             {
                                 match error_state {
                                     ErrorState::NoError => {
-                                        let track_index = current_track_index + 1; //humans count from 1
+                                        let track_index = current_track_index + 1; // humans count from 1
                                         let position_secs = position.as_secs();
                                         let duration_secs = duration.as_secs();
                                         // let mut number_of_digits;
@@ -554,7 +581,7 @@ fn main() -> Result<(), anyhow::Error> {
                                             message.as_str(),
                                         );
                                     }
-                                    _ => {}
+                                    _ => {} // here we only want to match the "no error condition"
                                 }
                             }
                         }
@@ -563,7 +590,7 @@ fn main() -> Result<(), anyhow::Error> {
             }
         }
 
-        lcd.clear(); //we are ending the program if we get to here
+        lcd.clear(); // we are ending the program if we get to here
         lcd.write_ascii(lcd_screen::LCDLineNumbers::Line1, 0, "Ending screen driver");
         lcd.write_multiline(
             lcd_screen::LCDLineNumbers::Line3,
@@ -588,5 +615,30 @@ fn assembleline2(mut artist: String, mut album: String) -> String {
         artist
     } else {
         format!("{} / {}", artist, album)
+    }
+}
+fn try_to_kill_earlier_versions_of_lcd_screen_driver() -> () {
+    let me = procfs::process::Process::myself().unwrap();
+    //println!("my pid is {}", me.pid);
+
+    for proc in procfs::process::all_processes().unwrap()
+    // only fails if there is no "/proc" folder
+    {
+        if proc.stat.comm == me.stat.comm && proc.pid != me.pid {
+            println!("got a pid  other than me {}", proc.pid);
+            if let Ok(process) = Process::new(proc.pid as u32) {
+                if let Err(error) = process.kill() {
+                    println!(
+                        "Failed to kill another LCD driver program due to error {}.",
+                        error
+                    );
+                }
+            } else {
+                println!(
+                    "Got error when trying to kill process with PID {}",
+                    proc.pid
+                );
+            };
+        }; // else it was either not an LCD screen driver or it was us.
     }
 }
