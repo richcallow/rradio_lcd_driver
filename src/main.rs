@@ -738,7 +738,10 @@ fn assembleline2(
         format!("{} / {}", station_title, artist_and_title)
     };
     if pause_before_playing > 0 {
-        format!("{} wait{}", pause_before_playing, pause_before_playing)
+        format!(
+            "{} wait{}",
+            station_and_artist_and_title, pause_before_playing
+        )
     } else {
         station_and_artist_and_title
     }
