@@ -278,16 +278,14 @@ impl LcdScreen {
                 .as_str(),
         )
     }
-    pub fn write_temperature_line4(&mut self) {
-        //writes the temperature to line 4
+    pub fn write_temperature(&mut self, line: LCDLineNumbers) {
         self.write_line(
-            LCDLineNumbers::Line4,
+            line,
             14,
             &format!("CPU Temp {} C", get_temperature::get_cpu_temperature()),
         )
     }
-    pub fn write_temperature_and_time(&mut self) {
-        //writes the temperature to line 4
+    pub fn write_temperature_and_time_to_line4(&mut self) {
         self.write_line(
             LCDLineNumbers::Line4,
             LCDLineNumbers::NUM_CHARACTERS_PER_LINE,

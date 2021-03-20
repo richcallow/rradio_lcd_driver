@@ -1,3 +1,3 @@
 cd ../rradio
-sudo ./target/debug/rradio
+./run_internet_radio_debug.bash
 
