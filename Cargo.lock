@@ -767,8 +767,8 @@ dependencies = [
 
 [[package]]
 name = "rradio-messages"
-version = "0.14.0"
-source = "git+https://github.com/sammhicks/internet-radio-rs#02a13d594e404f7713ecba7560718b6c7bc9a6a2"
+version = "0.17.0"
+source = "git+https://github.com/sammhicks/internet-radio-rs?branch=ping#5ab3e66ebce3bcd15e72c49ed2c292295a9ce5c6"
 dependencies = [
  "serde",
  "thiserror",

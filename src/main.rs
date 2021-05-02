@@ -21,7 +21,8 @@ pub enum ErrorState {
 
 fn main() -> Result<(), anyhow::Error> {
     try_to_kill_earlier_versions_of_lcd_screen_driver::try_to_kill_earlier_versions_of_lcd_screen_driver();
-
+//let mut  zerr;
+//let mut terr;
     let mut lcd = lcd_screen::LcdScreen::new()
         .context("Failed to initialize LCD screen")
         .map_err(|err| {
@@ -332,16 +333,21 @@ fn main() -> Result<(), anyhow::Error> {
                                     rradio_messages::MountError::TracksNotFound => {
                                         "Mount (USB or file server) error: Tracks not found".to_string()
                                     }
+
                                 }
                                 }
 
+
                                 rradio_messages::Error::StationError(
-                                    rradio_messages::StationError::StationsDirectoryIoError(err),
+                                    rradio_messages::StationError::StationsDirectoryIoError{directory, err}
                                 ) => {
                                     error_message_output = false; //always want this message output
                                     error_state = ErrorState::ProgrammerError;
-                                    format!("Station directory IO error {}", err)
+                                    format!("Station directory IO error {} in directory {}", err, directory)
                                 }
+
+
+
                                 rradio_messages::Error::StationError(
                                     rradio_messages::StationError::BadStationFile(err),
                                 ) => {
@@ -376,7 +382,7 @@ fn main() -> Result<(), anyhow::Error> {
                                 }
                                 rradio_messages::Error::TagError(tag_error) => {
                                     format!("Got a tag error {}", tag_error)
-                                } /* _ => {
+                                }/*  _ => {
                                       error_state = ErrorState::NotKnown;
                                       lcd.write_all_line_2("Got unhandled error");
                                       continue;
@@ -390,11 +396,20 @@ fn main() -> Result<(), anyhow::Error> {
                                 );
                                 error_message_output = true; //we want to output the first error message only to the screen
                             } // but all the messages to the HDMI screen as the latter can display the entire history
-                            println!("got error message {}", displayed_error_message);
+                            println!("got error message {}", displayed_error_message.to_string());
                         }
                     }
                 }
+
+ 
                 Event::PlayerStateChanged(diff) => {
+                    if let Some (fred) = diff.ping_times {
+                        match fred {
+                            //rradio_messages:PingTimes.None {;}
+                            _ => {println!("3")}
+                        }
+                        println!("fred {:?}", fred )} 
+
                     if let Some(current_track_tags) = diff.current_track_tags.into_option() {
                         println!("1current track tags {:?}", current_track_tags);
 
