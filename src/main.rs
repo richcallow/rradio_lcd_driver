@@ -1,12 +1,11 @@
 use anyhow::Context;
-use rradio_messages::PipelineState;
+use chrono::Local;
+use rradio_messages::{ArcStr, Event, PipelineState};
 use smol::io::AsyncReadExt;
 
 mod get_local_ip_address;
 mod lcd_screen;
 mod try_to_kill_earlier_versions_of_lcd_screen_driver;
-
-type Event = rradio_messages::Event<String, String, Vec<rradio_messages::Track>>;
 
 #[derive(PartialEq, Debug)]
 pub enum ErrorState {
@@ -21,8 +20,8 @@ pub enum ErrorState {
 
 fn main() -> Result<(), anyhow::Error> {
     try_to_kill_earlier_versions_of_lcd_screen_driver::try_to_kill_earlier_versions_of_lcd_screen_driver();
-//let mut  zerr;
-//let mut terr;
+    let mut no_connection_counter = 0;
+
     let mut lcd = lcd_screen::LcdScreen::new()
         .context("Failed to initialize LCD screen")
         .map_err(|err| {
@@ -53,27 +52,28 @@ fn main() -> Result<(), anyhow::Error> {
     smol::block_on(async move {
         let mut started_up = false;
         let mut error_state = ErrorState::NotKnown;
-        let mut pipe_line_state: PipelineState = PipelineState::VoidPending;
-        let mut volume: i32 = -1;
+        let mut pipe_line_state = PipelineState::VoidPending;
+        let mut volume = -1_i32;
         let mut current_track_index: usize = 0;
-        let mut current_channel: String;
-        let mut line2_text: String = "".to_string();
+        let mut current_channel: ArcStr;
+        let mut line2_text = String::new();
         let mut duration: Option<std::time::Duration> = None;
         let mut number_of_tracks: usize = 0;
-        let mut song_title = String::new();
+        let mut song_title = ArcStr::new();
         let mut num_of_scrolls_received: i32 = 0;
         let mut line2_text_scroll_position: usize = 0;
         let mut song_title_scroll_position: usize = 0;
-        let mut artist: String = "".to_string();
-        let mut album: String = "".to_string();
+        let mut artist = ArcStr::new();
+        let mut album = ArcStr::new();
         let mut station_type: rradio_messages::StationType = rradio_messages::StationType::CD;
-        let mut station_title: String = "".to_string();
+        let mut station_title = ArcStr::new();
         let mut got_station = false;
         let scroll_period = std::time::Duration::from_millis(1500);
         let number_scroll_events_before_scrolling: i32 = 4000 / scroll_period.as_millis() as i32;
         let mut last_scroll_time = std::time::Instant::now();
         let mut error_message_output = false;
         let mut pause_before_playing = 0;
+        let mut show_temparature_instead_of_gateway_ping = false;
 
         let mut connection = {
             loop {
@@ -88,7 +88,11 @@ fn main() -> Result<(), anyhow::Error> {
                         break c;
                     }
                     Err(error) => {
-                        println!("Connection Error: {:?}", error);
+                        no_connection_counter += 1;
+                        println!(
+                            "Connnection count{}: Connection Error: {:?}",
+                            no_connection_counter, error
+                        );
                         lcd.write_temperature_and_time_to_line4();
                         std::thread::sleep(std::time::Duration::from_millis(1000));
                     }
@@ -97,7 +101,8 @@ fn main() -> Result<(), anyhow::Error> {
         };
 
         loop {
-            let mut message_length_buffer = [0; 2];
+            const MESSAGE_LENGTH_BUFFER_LENGTH: usize = std::mem::size_of::<rradio_messages::MsgPackBufferLength>();
+            let mut message_length_buffer = [0; MESSAGE_LENGTH_BUFFER_LENGTH];
 
             let next_packet = async { Ok(connection.read(&mut message_length_buffer).await) };
             let next_scroll =
@@ -105,7 +110,7 @@ fn main() -> Result<(), anyhow::Error> {
             let next_event = smol::future::race(next_packet, next_scroll);
             match next_event.await {
                 Ok(bytes_read) => match bytes_read.context("Could not read buffer size")? {
-                    2 => (),
+                    MESSAGE_LENGTH_BUFFER_LENGTH => (),
                     0 => {
                         println!("got zero bytes");
                         break;
@@ -127,7 +132,7 @@ fn main() -> Result<(), anyhow::Error> {
                                     lcd.write_with_scroll(
                                         lcd_screen::LCDLineNumbers::Line3,
                                         lcd_screen::LCDLineNumbers::NUM_CHARACTERS_PER_LINE * 2,
-                                        song_title.as_str(),
+                                        song_title.as_ref(),
                                         &mut song_title_scroll_position,
                                     );
                                 } else if song_title.len() == 0 && started_up {
@@ -162,7 +167,7 @@ fn main() -> Result<(), anyhow::Error> {
                     continue;
                 }
             }
-            let message_length = u16::from_be_bytes(message_length_buffer);
+            let message_length = rradio_messages::MsgPackBufferLength::from_be_bytes(message_length_buffer);
             let mut buffer = vec![0; message_length as usize];
 
             connection
@@ -337,16 +342,19 @@ fn main() -> Result<(), anyhow::Error> {
                                 }
                                 }
 
-
                                 rradio_messages::Error::StationError(
-                                    rradio_messages::StationError::StationsDirectoryIoError{directory, err}
+                                    rradio_messages::StationError::StationsDirectoryIoError {
+                                        directory,
+                                        err,
+                                    },
                                 ) => {
                                     error_message_output = false; //always want this message output
                                     error_state = ErrorState::ProgrammerError;
-                                    format!("Station directory IO error {} in directory {}", err, directory)
+                                    format!(
+                                        "Station directory IO error {} in directory {}",
+                                        err, directory
+                                    )
                                 }
-
-
 
                                 rradio_messages::Error::StationError(
                                     rradio_messages::StationError::BadStationFile(err),
@@ -361,10 +369,10 @@ fn main() -> Result<(), anyhow::Error> {
                                 ) => {
                                     error_state = ErrorState::NoStation;
                                     current_channel = index;
-                                    song_title = "".to_string();
+                                    song_title = ArcStr::new();
                                     line2_text = "".to_string();
                                     current_track_index = 0;
-                                    station_title = "".to_string();
+                                    station_title = ArcStr::new();
                                     number_of_tracks = 0;
                                     duration = None;
                                     num_of_scrolls_received = 0;
@@ -377,12 +385,17 @@ fn main() -> Result<(), anyhow::Error> {
                                         format!("No station {}", current_channel).as_str(),
                                     );
                                     lcd.write_temperature(lcd_screen::LCDLineNumbers::Line4);
+                                    lcd.write_ascii(
+                                        lcd_screen::LCDLineNumbers::Line4,
+                                        17,
+                                        Local::now().format("%a").to_string().as_str(),
+                                    );
                                     lcd.write_date_and_time_of_day_line3();
                                     continue;
                                 }
                                 rradio_messages::Error::TagError(tag_error) => {
                                     format!("Got a tag error {}", tag_error)
-                                }/*  _ => {
+                                } /*  _ => {
                                       error_state = ErrorState::NotKnown;
                                       lcd.write_all_line_2("Got unhandled error");
                                       continue;
@@ -401,14 +414,92 @@ fn main() -> Result<(), anyhow::Error> {
                     }
                 }
 
- 
                 Event::PlayerStateChanged(diff) => {
-                    if let Some (fred) = diff.ping_times {
-                        match fred {
-                            //rradio_messages:PingTimes.None {;}
-                            _ => {println!("3")}
-                        }
-                        println!("fred {:?}", fred )} 
+                    use rradio_messages::{PingTarget, PingTimes};
+                    if let Some(ping_times) = diff.ping_times {
+                        show_temparature_instead_of_gateway_ping =
+                            !show_temparature_instead_of_gateway_ping;
+                        let ping_message = match ping_times {
+                            PingTimes::FinishedPingingRemote { gateway_ping: _ }
+                                if show_temparature_instead_of_gateway_ping =>
+                            {
+                                format!("CPU temp{:>3}C", lcd.get_cpu_temperature())
+                            }
+                            PingTimes::Gateway(Ok(gateway_ping))
+                            | PingTimes::GatewayAndRemote {
+                                gateway_ping, // this branch matches local pings that did not give an error
+                                remote_ping: _,
+                                latest: PingTarget::Gateway,
+                            }
+                            | PingTimes::FinishedPingingRemote { gateway_ping } => {
+                                if gateway_ping.as_nanos() < 9_999_999 {
+                                    format!(
+                                        "LocPing{:.width$}ms",
+                                        gateway_ping.as_micros() as f32 / 1000.0,
+                                        width = 1
+                                    )
+                                } else {
+                                    format!("LocPing{:>3}ms", gateway_ping.as_nanos() / 1000_000)
+                                }
+                            }
+                            .to_string(),
+                            PingTimes::GatewayAndRemote {
+                                gateway_ping: _, //this branch matches remote pings that did not give an error
+                                remote_ping: Ok(remote_ping),
+                                latest: PingTarget::Remote,
+                            } => {
+                                if remote_ping.as_nanos() < 9_999_999 {
+                                    format!(
+                                        "RemPing{:.width$}ms",
+                                        remote_ping.as_micros() as f32 / 1000.0,
+                                        width = 1
+                                    )
+                                } else {
+                                    format!("RemPing{:>3}ms", remote_ping.as_nanos() / 1000_000)
+                                }
+                            }
+                            PingTimes::None => "PingTime None".to_string(),
+                            PingTimes::BadUrl => "Bad URL".to_string(),
+                            PingTimes::Gateway(Err(gateway_error)) => ({
+                                match gateway_error {
+                                    rradio_messages::PingError::FailedToRecieveICMP => {
+                                        "LPing Rx fail"
+                                    } // OS raised error when receiving ICMP message
+                                    rradio_messages::PingError::DestinationUnreachable => {
+                                        "LDest Unreach"
+                                    } // Ping response reported as "Destination Unreachable"
+                                    rradio_messages::PingError::Timeout => "LPing NoReply",
+                                    rradio_messages::PingError::FailedToSendICMP => {
+                                        "LPing Tx Fail"
+                                    }
+                                    rradio_messages::PingError::Dns => "LPing DNS err",
+                                }
+                            })
+                            .to_string(),
+
+                            PingTimes::GatewayAndRemote {
+                                gateway_ping: _, //this brach matches remote ping that failed
+                                remote_ping: Err(remote_error),
+                                latest: PingTarget::Remote,
+                            } => {
+                                match remote_error {
+                                    rradio_messages::PingError::FailedToRecieveICMP => {
+                                        "LPing: Rx fail"
+                                    }
+                                    rradio_messages::PingError::DestinationUnreachable => {
+                                        "RDest Unreach"
+                                    }
+                                    rradio_messages::PingError::Timeout => "RPing NoReply",
+                                    rradio_messages::PingError::FailedToSendICMP => {
+                                        "LPing Tx fail"
+                                    }
+                                    rradio_messages::PingError::Dns => "RPing DNS err",
+                                }
+                            }
+                            .to_string(),
+                        };
+                        println!("ping_times: {}", ping_message);
+                    }
 
                     if let Some(current_track_tags) = diff.current_track_tags.into_option() {
                         println!("1current track tags {:?}", current_track_tags);
@@ -420,7 +511,7 @@ fn main() -> Result<(), anyhow::Error> {
                             );
                             if let Some(organisation_from_tag) = track_tags.organisation {
                                 line2_text = if current_track_index == 0 {
-                                    organisation_from_tag
+                                    organisation_from_tag.to_string()
                                 } else {
                                     format!("{} {}", current_track_index + 1, organisation_from_tag)
                                 };
@@ -453,13 +544,13 @@ fn main() -> Result<(), anyhow::Error> {
                                 }
                             }
 
-                            song_title = track_tags.title.unwrap_or_else(|| "".to_string());
+                            song_title = track_tags.title.unwrap_or_default();
                             //println!("ye_tag_title {}", song_title);
                             if started_up {
                                 lcd.write_multiline(
                                     lcd_screen::LCDLineNumbers::Line3,
                                     lcd_screen::LCDLineNumbers::NUM_CHARACTERS_PER_LINE * 2,
-                                    song_title.as_str(),
+                                    song_title.as_ref(),
                                 );
                             }
                             num_of_scrolls_received = 0;
@@ -467,9 +558,9 @@ fn main() -> Result<(), anyhow::Error> {
                             song_title_scroll_position = 0;
                         } else {
                             // the tags have changed to be "" so we must blank them
-                            song_title = "".to_string();
-                            artist = "".to_string();
-                            album = "".to_string();
+                            song_title = ArcStr::new();
+                            artist = ArcStr::new();
+                            album = ArcStr::new();
                             lcd.write_multiline(
                                 lcd_screen::LCDLineNumbers::Line3,
                                 lcd_screen::LCDLineNumbers::NUM_CHARACTERS_PER_LINE * 2,
@@ -485,12 +576,12 @@ fn main() -> Result<(), anyhow::Error> {
                         got_station = true;
                         error_state = ErrorState::NoError;
                         error_message_output = false; // as there is no error, we have not output one
-                        song_title = "".to_string();
-                        artist = "".to_string();
-                        album = "".to_string();
+                        song_title = ArcStr::new();
+                        artist = ArcStr::new();
+                        album = ArcStr::new();
                         num_of_scrolls_received = 0;
                         line2_text_scroll_position = 0;
-                        line2_text = "".to_string();
+                        line2_text = String::new();
                         song_title_scroll_position = 0;
                         current_track_index = 0;
                         if let Some(station) = current_station {
@@ -504,13 +595,13 @@ fn main() -> Result<(), anyhow::Error> {
                                 "Current Station{:?} with {} tracks",
                                 station, number_of_tracks
                             );
-                            station_title = station.title.unwrap_or_else(|| "".to_string());
-                            current_channel = station.index.unwrap_or_else(|| "".to_string());
+                            station_title = station.title.unwrap_or_default();
+                            current_channel = station.index.unwrap_or_default();
                             if number_of_tracks > 0 {
                                 let first_track = &station.tracks[0];
                                 {
                                     if let Some(artist_from_track) = &first_track.artist {
-                                        artist = artist_from_track.to_string();
+                                        artist = artist_from_track.clone();
                                         line2_text = assembleline2(
                                             station_title.to_string(),
                                             artist.to_string(),
@@ -521,7 +612,7 @@ fn main() -> Result<(), anyhow::Error> {
                                         song_title_scroll_position = 0;
                                     }
                                     if let Some(album_from_track) = &first_track.album {
-                                        album = album_from_track.to_string();
+                                        album = album_from_track.clone();
                                         line2_text = assembleline2(
                                             station_title.to_string(),
                                             artist.to_string(),
@@ -532,7 +623,7 @@ fn main() -> Result<(), anyhow::Error> {
                                         song_title_scroll_position = 0;
                                     }
                                     if let Some(title_from_track) = &first_track.title {
-                                        song_title = title_from_track.to_string();
+                                        song_title = title_from_track.clone();
                                         lcd.write_multiline(
                                             lcd_screen::LCDLineNumbers::Line3,
                                             lcd_screen::LCDLineNumbers::NUM_CHARACTERS_PER_LINE * 2,
@@ -550,7 +641,7 @@ fn main() -> Result<(), anyhow::Error> {
                                     ));
                                     "Playing CD ".to_string()
                                 }
-                                rradio_messages::StationType::USB => {
+                                rradio_messages::StationType::Usb => {
                                     format!("USB {}", &current_channel)
                                 }
                                 rradio_messages::StationType::UrlList => {
@@ -725,6 +816,7 @@ fn main() -> Result<(), anyhow::Error> {
         Ok(())
     })
 }
+
 fn assembleline2(
     station_title: String,
     mut artist: String,

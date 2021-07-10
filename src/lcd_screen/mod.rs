@@ -278,6 +278,10 @@ impl LcdScreen {
                 .as_str(),
         )
     }
+    pub fn get_cpu_temperature(&mut self) -> i32 {
+        get_temperature::get_cpu_temperature()
+    }
+
     pub fn write_temperature(&mut self, line: LCDLineNumbers) {
         self.write_line(
             line,
