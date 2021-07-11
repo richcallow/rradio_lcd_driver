@@ -67,6 +67,7 @@ fn main() -> Result<(), anyhow::Error> {
         let mut album = ArcStr::new();
         let mut station_type: rradio_messages::StationType = rradio_messages::StationType::CD;
         let mut station_title = ArcStr::new();
+        let mut station_change_time;
         let mut got_station = false;
         let scroll_period = std::time::Duration::from_millis(1500);
         let number_scroll_events_before_scrolling: i32 = 4000 / scroll_period.as_millis() as i32;
@@ -100,8 +101,10 @@ fn main() -> Result<(), anyhow::Error> {
             }
         };
 
+        station_change_time = std::time::Instant::now(); //now that we have a connection, not when we start
         loop {
-            const MESSAGE_LENGTH_BUFFER_LENGTH: usize = std::mem::size_of::<rradio_messages::MsgPackBufferLength>();
+            const MESSAGE_LENGTH_BUFFER_LENGTH: usize =
+                std::mem::size_of::<rradio_messages::MsgPackBufferLength>();
             let mut message_length_buffer = [0; MESSAGE_LENGTH_BUFFER_LENGTH];
 
             let next_packet = async { Ok(connection.read(&mut message_length_buffer).await) };
@@ -167,7 +170,8 @@ fn main() -> Result<(), anyhow::Error> {
                     continue;
                 }
             }
-            let message_length = rradio_messages::MsgPackBufferLength::from_be_bytes(message_length_buffer);
+            let message_length =
+                rradio_messages::MsgPackBufferLength::from_be_bytes(message_length_buffer);
             let mut buffer = vec![0; message_length as usize];
 
             connection
@@ -416,91 +420,185 @@ fn main() -> Result<(), anyhow::Error> {
 
                 Event::PlayerStateChanged(diff) => {
                     use rradio_messages::{PingTarget, PingTimes};
-                    if let Some(ping_times) = diff.ping_times {
-                        show_temparature_instead_of_gateway_ping =
-                            !show_temparature_instead_of_gateway_ping;
-                        let ping_message = match ping_times {
-                            PingTimes::FinishedPingingRemote { gateway_ping: _ }
-                                if show_temparature_instead_of_gateway_ping =>
-                            {
-                                format!("CPU temp{:>3}C", lcd.get_cpu_temperature())
-                            }
-                            PingTimes::Gateway(Ok(gateway_ping))
-                            | PingTimes::GatewayAndRemote {
-                                gateway_ping, // this branch matches local pings that did not give an error
-                                remote_ping: _,
-                                latest: PingTarget::Gateway,
-                            }
-                            | PingTimes::FinishedPingingRemote { gateway_ping } => {
-                                if gateway_ping.as_nanos() < 9_999_999 {
+                    if started_up
+                        && station_change_time.elapsed() > std::time::Duration::from_secs(6)
+                    {
+                        if let Some(ref ping_times) = diff.ping_times {
+                            show_temparature_instead_of_gateway_ping =
+                                !show_temparature_instead_of_gateway_ping;
+                            let ping_message = match ping_times {
+                                PingTimes::FinishedPingingRemote { gateway_ping: _ }
+                                    if show_temparature_instead_of_gateway_ping =>
+                                {
+                                    format!("CPU temp{:>3}C", lcd.get_cpu_temperature())
+                                }
+                                PingTimes::Gateway(Ok(gateway_ping))
+                                | PingTimes::GatewayAndRemote {
+                                    gateway_ping, // this branch matches local pings that did not give an error
+                                    remote_ping: _,
+                                    latest: PingTarget::Gateway,
+                                }
+                                | PingTimes::FinishedPingingRemote { gateway_ping } => {
+                                    if gateway_ping.as_nanos() < 9_999_999 {
+                                        format!(
+                                            "LocPing{:.width$}ms",
+                                            gateway_ping.as_micros() as f32 / 1000.0,
+                                            width = 1
+                                        )
+                                    } else {
+                                        format!(
+                                            "LocPing{:>3}ms",
+                                            gateway_ping.as_nanos() / 1000_000
+                                        )
+                                    }
+                                }
+                                .to_string(),
+                                PingTimes::GatewayAndRemote {
+                                    gateway_ping: _, //this branch matches remote pings that did not give an error
+                                    remote_ping: Ok(remote_ping),
+                                    latest: PingTarget::Remote,
+                                } => {
+                                    if remote_ping.as_nanos() < 9_999_999 {
+                                        format!(
+                                            "RemPing{:.width$}ms",
+                                            remote_ping.as_micros() as f32 / 1000.0,
+                                            width = 1
+                                        )
+                                    } else {
+                                        format!("RemPing{:>3}ms", remote_ping.as_nanos() / 1000_000)
+                                    }
+                                }
+                                PingTimes::None => "PingTime None".to_string(),
+                                PingTimes::BadUrl => "Bad URL".to_string(),
+                                PingTimes::Gateway(Err(gateway_error)) => ({
+                                    match gateway_error {
+                                        rradio_messages::PingError::FailedToRecieveICMP => {
+                                            "LPing Rx fail"
+                                        } // OS raised error when receiving ICMP message
+                                        rradio_messages::PingError::DestinationUnreachable => {
+                                            "LDest Unreach"
+                                        } // Ping response reported as "Destination Unreachable"
+                                        rradio_messages::PingError::Timeout => "LPing NoReply",
+                                        rradio_messages::PingError::FailedToSendICMP => {
+                                            "LPing Tx Fail"
+                                        }
+                                        rradio_messages::PingError::Dns => "LPing DNS err",
+                                    }
+                                })
+                                .to_string(),
+
+                                PingTimes::GatewayAndRemote {
+                                    gateway_ping: _, //this brach matches remote ping that failed
+                                    remote_ping: Err(remote_error),
+                                    latest: PingTarget::Remote,
+                                } => {
+                                    match remote_error {
+                                        rradio_messages::PingError::FailedToRecieveICMP => {
+                                            "LPing: Rx fail"
+                                        }
+                                        rradio_messages::PingError::DestinationUnreachable => {
+                                            "RDest Unreach"
+                                        }
+                                        rradio_messages::PingError::Timeout => "RPing NoReply",
+                                        rradio_messages::PingError::FailedToSendICMP => {
+                                            "LPing Tx fail"
+                                        }
+                                        rradio_messages::PingError::Dns => "RPing DNS err",
+                                    }
+                                }
+                                .to_string(),
+                            };
+                            lcd.write_line(
+                                lcd_screen::LCDLineNumbers::Line1,
+                                lcd_screen::LCDLineNumbers::LINE1_DATA_CHAR_COUNT,
+                                &ping_message,
+                            );
+                        }
+                    }
+                    if !started_up {
+                        if let Some(ping_times) = diff.ping_times {
+                            show_temparature_instead_of_gateway_ping =
+                                !show_temparature_instead_of_gateway_ping;
+                            let ping_message = match ping_times {
+                                PingTimes::FinishedPingingRemote { gateway_ping: _ }
+                                    if show_temparature_instead_of_gateway_ping =>
+                                {
+                                    format!("CPU temp{:>3}C", lcd.get_cpu_temperature())
+                                }
+                                PingTimes::Gateway(Ok(gateway_ping))
+                                | PingTimes::GatewayAndRemote {
+                                    gateway_ping, // this branch matches local pings that did not give an error
+                                    remote_ping: _,
+                                    latest: PingTarget::Gateway,
+                                }
+                                | PingTimes::FinishedPingingRemote { gateway_ping } => {
                                     format!(
-                                        "LocPing{:.width$}ms",
+                                        "Local ping {:.width$}ms",
                                         gateway_ping.as_micros() as f32 / 1000.0,
                                         width = 1
                                     )
-                                } else {
-                                    format!("LocPing{:>3}ms", gateway_ping.as_nanos() / 1000_000)
                                 }
-                            }
-                            .to_string(),
-                            PingTimes::GatewayAndRemote {
-                                gateway_ping: _, //this branch matches remote pings that did not give an error
-                                remote_ping: Ok(remote_ping),
-                                latest: PingTarget::Remote,
-                            } => {
-                                if remote_ping.as_nanos() < 9_999_999 {
+                                .to_string(),
+                                PingTimes::GatewayAndRemote {
+                                    gateway_ping: _, //this branch matches remote pings that did not give an error
+                                    remote_ping: Ok(remote_ping),
+                                    latest: PingTarget::Remote,
+                                } => {
                                     format!(
-                                        "RemPing{:.width$}ms",
+                                        "Remote ping {:.width$}ms",
                                         remote_ping.as_micros() as f32 / 1000.0,
                                         width = 1
                                     )
-                                } else {
-                                    format!("RemPing{:>3}ms", remote_ping.as_nanos() / 1000_000)
                                 }
-                            }
-                            PingTimes::None => "PingTime None".to_string(),
-                            PingTimes::BadUrl => "Bad URL".to_string(),
-                            PingTimes::Gateway(Err(gateway_error)) => ({
-                                match gateway_error {
-                                    rradio_messages::PingError::FailedToRecieveICMP => {
-                                        "LPing Rx fail"
-                                    } // OS raised error when receiving ICMP message
-                                    rradio_messages::PingError::DestinationUnreachable => {
-                                        "LDest Unreach"
-                                    } // Ping response reported as "Destination Unreachable"
-                                    rradio_messages::PingError::Timeout => "LPing NoReply",
-                                    rradio_messages::PingError::FailedToSendICMP => {
-                                        "LPing Tx Fail"
+                                PingTimes::None => "Ping Time None".to_string(),
+                                PingTimes::BadUrl => "Bad URL".to_string(),
+                                PingTimes::Gateway(Err(gateway_error)) => ({
+                                    match gateway_error {
+                                        rradio_messages::PingError::FailedToRecieveICMP => {
+                                            "Local ping Rx fail"
+                                        } // OS raised error when receiving ICMP message
+                                        rradio_messages::PingError::DestinationUnreachable => {
+                                            "Loc Dest Unreachable"
+                                        } // Ping response reported as "Destination Unreachable"
+                                        rradio_messages::PingError::Timeout => {
+                                            "Local ping: No reply"
+                                        }
+                                        rradio_messages::PingError::FailedToSendICMP => {
+                                            "Local ping: Tx Fail"
+                                        }
+                                        rradio_messages::PingError::Dns => "Local ping DNS error",
                                     }
-                                    rradio_messages::PingError::Dns => "LPing DNS err",
-                                }
-                            })
-                            .to_string(),
+                                })
+                                .to_string(),
 
-                            PingTimes::GatewayAndRemote {
-                                gateway_ping: _, //this brach matches remote ping that failed
-                                remote_ping: Err(remote_error),
-                                latest: PingTarget::Remote,
-                            } => {
-                                match remote_error {
-                                    rradio_messages::PingError::FailedToRecieveICMP => {
-                                        "LPing: Rx fail"
+                                PingTimes::GatewayAndRemote {
+                                    gateway_ping: _, //this brach matches remote ping that failed
+                                    remote_ping: Err(remote_error),
+                                    latest: PingTarget::Remote,
+                                } => {
+                                    match remote_error {
+                                        rradio_messages::PingError::FailedToRecieveICMP => {
+                                            "LPing: Rx fail"
+                                        }
+                                        rradio_messages::PingError::DestinationUnreachable => {
+                                            "RDest Unreach"
+                                        }
+                                        rradio_messages::PingError::Timeout => "RPing NoReply",
+                                        rradio_messages::PingError::FailedToSendICMP => {
+                                            "LPing Tx fail"
+                                        }
+                                        rradio_messages::PingError::Dns => "RPing DNS err",
                                     }
-                                    rradio_messages::PingError::DestinationUnreachable => {
-                                        "RDest Unreach"
-                                    }
-                                    rradio_messages::PingError::Timeout => "RPing NoReply",
-                                    rradio_messages::PingError::FailedToSendICMP => {
-                                        "LPing Tx fail"
-                                    }
-                                    rradio_messages::PingError::Dns => "RPing DNS err",
                                 }
-                            }
-                            .to_string(),
-                        };
-                        println!("ping_times: {}", ping_message);
+                                .to_string(),
+                            };
+                            lcd.write_line(
+                                lcd_screen::LCDLineNumbers::Line2,
+                                lcd_screen::LCDLineNumbers::NUM_CHARACTERS_PER_LINE,
+                                &ping_message,
+                            );
+                        }
                     }
-
                     if let Some(current_track_tags) = diff.current_track_tags.into_option() {
                         println!("1current track tags {:?}", current_track_tags);
 
@@ -595,6 +693,7 @@ fn main() -> Result<(), anyhow::Error> {
                                 "Current Station{:?} with {} tracks",
                                 station, number_of_tracks
                             );
+                            station_change_time = std::time::Instant::now();
                             station_title = station.title.unwrap_or_default();
                             current_channel = station.index.unwrap_or_default();
                             if number_of_tracks > 0 {
