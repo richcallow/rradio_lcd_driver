@@ -13,6 +13,7 @@ pub enum ErrorState {
     NoError,
     NoStation,
     CdError,
+    CdEjectError,
     UsbOrSambaError,
     GStreamerError,
     ProgrammerError,
@@ -161,6 +162,7 @@ fn main() -> Result<(), anyhow::Error> {
                         }
                         ErrorState::NotKnown => println!("Error state: unknown"),
                         ErrorState::CdError => println!("Error state: CD Error"),
+                        ErrorState::CdEjectError => println!("Error state CD eject error"),
                         ErrorState::UsbOrSambaError => println!("Error state: USB or server Error"),
                         ErrorState::ProgrammerError => println!("Error state:: Programmer error"),
                         ErrorState::GStreamerError => println!("Error state:: Gstreamer error"),
@@ -179,7 +181,7 @@ fn main() -> Result<(), anyhow::Error> {
                 .await
                 .context("Could not read event")?;
 
-            log::debug!("length {},   {:?}", message_length, buffer);
+            //log::debug!("length {},   {:?}", message_length, buffer);
 
             let event: Event = rmp_serde::from_slice(&buffer).unwrap();
 
@@ -219,7 +221,8 @@ fn main() -> Result<(), anyhow::Error> {
                                 rradio_messages::Error::PipelineError(error) => {
                                     error_state = ErrorState::GStreamerError;
                                     println!("Gstreamer error{}", error.0);
-                                    format!("GStreamer Error {}", error.0)
+                                    format!("             GStreamer Error {}", error.0)
+                                    //13 spaces so it is not overwrtten by the ping time
                                 }
                                 rradio_messages::Error::StationError(
                                     rradio_messages::StationError::CdError(cderr),
@@ -342,7 +345,6 @@ fn main() -> Result<(), anyhow::Error> {
                                     rradio_messages::MountError::TracksNotFound => {
                                         "Mount (USB or file server) error: Tracks not found".to_string()
                                     }
-
                                 }
                                 }
 
@@ -399,7 +401,11 @@ fn main() -> Result<(), anyhow::Error> {
                                 }
                                 rradio_messages::Error::TagError(tag_error) => {
                                     format!("Got a tag error {}", tag_error)
-                                } /*  _ => {
+                                }
+                                rradio_messages::Error::EjectError(_) => {
+                                    //error_message_output = true;
+                                    "CD EjectError".to_string()
+                                } /*_ => {
                                       error_state = ErrorState::NotKnown;
                                       lcd.write_all_line_2("Got unhandled error");
                                       continue;
@@ -655,15 +661,19 @@ fn main() -> Result<(), anyhow::Error> {
                             line2_text_scroll_position = 0;
                             song_title_scroll_position = 0;
                         } else {
+                            if error_state != ErrorState::GStreamerError {}
                             // the tags have changed to be "" so we must blank them
                             song_title = ArcStr::new();
                             artist = ArcStr::new();
                             album = ArcStr::new();
-                            lcd.write_multiline(
-                                lcd_screen::LCDLineNumbers::Line3,
-                                lcd_screen::LCDLineNumbers::NUM_CHARACTERS_PER_LINE * 2,
-                                "",
-                            );
+                            if error_state != ErrorState::GStreamerError {
+                                // do not overwrite gstreamer errors
+                                lcd.write_multiline(
+                                    lcd_screen::LCDLineNumbers::Line3,
+                                    lcd_screen::LCDLineNumbers::NUM_CHARACTERS_PER_LINE * 2,
+                                    "",
+                                );
+                            }
                         };
                     }
                     if let Some(current_station) = diff.current_station.into_option() {
