@@ -220,7 +220,7 @@ fn main() -> Result<(), anyhow::Error> {
                                 }
                                 rradio_messages::Error::PipelineError(error) => {
                                     error_state = ErrorState::GStreamerError;
-                                    println!("Gstreamer error{}", error.0);
+                                    //println!("Gstreamer error{}", error.0);
                                     format!("             GStreamer Error {}", error.0)
                                     //13 spaces so it is not overwrtten by the ping time
                                 }
@@ -606,13 +606,13 @@ fn main() -> Result<(), anyhow::Error> {
                         }
                     }
                     if let Some(current_track_tags) = diff.current_track_tags.into_option() {
-                        println!("1current track tags {:?}", current_track_tags);
+                        //println!("1current track tags {:?}", current_track_tags);
 
                         if let Some(track_tags) = current_track_tags {
-                            println!(
+                            /*println!(
                                 "2current track_tags{:?}, current_tract_index{}",
                                 track_tags, current_track_index
-                            );
+                            );*/
                             if let Some(organisation_from_tag) = track_tags.organisation {
                                 line2_text = if current_track_index == 0 {
                                     organisation_from_tag.to_string()
@@ -703,6 +703,15 @@ fn main() -> Result<(), anyhow::Error> {
                                 "Current Station{:?} with {} tracks",
                                 station, number_of_tracks
                             );
+                            match station_type {
+                                rradio_messages::StationType::CD => {
+                                    pause_before_playing = 0;
+                                }
+                                rradio_messages::StationType::Usb => {
+                                    pause_before_playing = 0;
+                                }
+                                _ => {}
+                            }
                             station_change_time = std::time::Instant::now();
                             station_title = station.title.unwrap_or_default();
                             current_channel = station.index.unwrap_or_default();
