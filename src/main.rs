@@ -101,7 +101,8 @@ fn main() -> Result<(), anyhow::Error> {
                 }
             }
         };
-
+        const PING_TIME_NONE :&str = "Ping Time None";
+ 
         station_change_time = std::time::Instant::now(); //now that we have a connection, not when we start
         loop {
             const MESSAGE_LENGTH_BUFFER_LENGTH: usize =
@@ -474,7 +475,7 @@ fn main() -> Result<(), anyhow::Error> {
                                         format!("RemPing{:>3}ms", remote_ping.as_nanos() / 1000_000)
                                     }
                                 }
-                                PingTimes::None => "PingTime None".to_string(),
+                                PingTimes::None => PING_TIME_NONE.to_string(),
                                 PingTimes::BadUrl => "Bad URL".to_string(),
                                 PingTimes::Gateway(Err(gateway_error)) => ({
                                     match gateway_error {
@@ -514,24 +515,25 @@ fn main() -> Result<(), anyhow::Error> {
                                 }
                                 .to_string(),
                             };
+                            if ping_message != PING_TIME_NONE{
                             lcd.write_line(
                                 lcd_screen::LCDLineNumbers::Line1,
                                 lcd_screen::LCDLineNumbers::LINE1_DATA_CHAR_COUNT,
                                 &ping_message,
-                            );
+                            )};
                         }
                     }
                     if !started_up {
                         if let Some(ping_times) = diff.ping_times {
                             show_temparature_instead_of_gateway_ping =
                                 !show_temparature_instead_of_gateway_ping;
-                            let ping_message = match ping_times {
+                                let ping_message = match ping_times {
                                 PingTimes::FinishedPingingRemote { gateway_ping: _ }
                                     if show_temparature_instead_of_gateway_ping =>
                                 {
                                     format!("CPU temp{:>3}C", lcd.get_cpu_temperature())
                                 }
-                                PingTimes::Gateway(Ok(gateway_ping))
+                                PingTimes::Gateway(Ok(gateway_ping)) 
                                 | PingTimes::GatewayAndRemote {
                                     gateway_ping, // this branch matches local pings that did not give an error
                                     remote_ping: _,
@@ -556,7 +558,7 @@ fn main() -> Result<(), anyhow::Error> {
                                         width = 1
                                     )
                                 }
-                                PingTimes::None => "Ping Time None".to_string(),
+                                PingTimes::None => PING_TIME_NONE.to_string(),
                                 PingTimes::BadUrl => "Bad URL".to_string(),
                                 PingTimes::Gateway(Err(gateway_error)) => ({
                                     match gateway_error {
@@ -598,11 +600,12 @@ fn main() -> Result<(), anyhow::Error> {
                                 }
                                 .to_string(),
                             };
+                            if ping_message != PING_TIME_NONE{
                             lcd.write_line(
                                 lcd_screen::LCDLineNumbers::Line2,
                                 lcd_screen::LCDLineNumbers::NUM_CHARACTERS_PER_LINE,
                                 &ping_message,
-                            );
+                            );}
                         }
                     }
                     if let Some(current_track_tags) = diff.current_track_tags.into_option() {
