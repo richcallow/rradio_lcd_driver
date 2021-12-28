@@ -734,8 +734,8 @@ dependencies = [
 
 [[package]]
 name = "rradio-messages"
-version = "0.22.0"
-source = "git+https://github.com/sammhicks/internet-radio-rs#9584e0036c4b45bc630e336717f561c38df53742"
+version = "0.22.1"
+source = "git+https://github.com/sammhicks/internet-radio-rs#8bbc6f31297a41fa042fa5ceac33c439a9c296ed"
 dependencies = [
  "arcstr",
  "serde",
@@ -747,6 +747,7 @@ name = "rradio_lcd_driver"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "arcstr",
  "chrono",
  "clerk",
  "gpio-cdev",

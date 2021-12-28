@@ -4,6 +4,7 @@ use rradio_messages::PipelineState;
 
 mod character_pattern;
 mod get_temperature;
+mod get_wifi_strength;
 mod hal;
 
 #[derive(Clone, Copy)]
@@ -248,7 +249,10 @@ impl LcdScreen {
     }
     pub fn write_volume(&mut self, pipe_line_state: PipelineState, volume: i32) {
         // outputs the volume (or the gstreamer state if not playing) to the LCD screen
-        let message = if pipe_line_state == PipelineState::Playing && volume >= 0 {
+        let message = if ((pipe_line_state == PipelineState::Playing)
+            | (pipe_line_state == PipelineState::VoidPending))
+            && volume >= 0
+        {
             format!(
                 "Vol{:>Width$.Width$}",
                 volume,
@@ -282,19 +286,24 @@ impl LcdScreen {
         get_temperature::get_cpu_temperature()
     }
 
-    pub fn write_temperature(&mut self, line: LCDLineNumbers) {
+    pub fn write_temperature_and_strength(&mut self, line: LCDLineNumbers) {
         self.write_line(
             line,
-            14,
-            &format!("CPU Temp {} C", get_temperature::get_cpu_temperature()),
+            20,
+            &format!(
+                "CPU Temp {}C WiFi{}",
+                get_temperature::get_cpu_temperature(),
+                get_wifi_strength::get_wifi_signal_strength()
+            ),
         )
     }
+
     pub fn write_temperature_and_time_to_line4(&mut self) {
         self.write_line(
             LCDLineNumbers::Line4,
             LCDLineNumbers::NUM_CHARACTERS_PER_LINE,
             &format!(
-                "CPU Temp {} C {}",
+                "CPU temp {} C {}",
                 get_temperature::get_cpu_temperature(),
                 Local::now().format("%H:%M").to_string().as_str(),
             ),

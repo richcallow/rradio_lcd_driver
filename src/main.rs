@@ -56,7 +56,7 @@ fn main() -> Result<(), anyhow::Error> {
         let mut pipe_line_state = PipelineState::VoidPending;
         let mut volume = -1_i32;
         let mut current_track_index: usize = 0;
-        let mut current_channel: ArcStr;
+        let mut current_channel;
         let mut line2_text = String::new();
         let mut duration: Option<std::time::Duration> = None;
         let mut number_of_tracks: usize = 0;
@@ -101,8 +101,8 @@ fn main() -> Result<(), anyhow::Error> {
                 }
             }
         };
-        const PING_TIME_NONE :&str = "Ping Time None";
- 
+        const PING_TIME_NONE: &str = "Ping Time None";
+
         station_change_time = std::time::Instant::now(); //now that we have a connection, not when we start
         loop {
             const MESSAGE_LENGTH_BUFFER_LENGTH: usize =
@@ -125,7 +125,7 @@ fn main() -> Result<(), anyhow::Error> {
                 Err(timeout_time) => {
                     match error_state {
                         ErrorState::NoStation => {
-                            lcd.write_temperature(lcd_screen::LCDLineNumbers::Line4);
+                            lcd.write_temperature_and_strength(lcd_screen::LCDLineNumbers::Line4);
                             lcd.write_date_and_time_of_day_line3();
                         }
                         ErrorState::NoError => {
@@ -142,7 +142,9 @@ fn main() -> Result<(), anyhow::Error> {
                                     );
                                 } else if song_title.len() == 0 && started_up {
                                     // we have space to write the temperature
-                                    lcd.write_temperature(lcd_screen::LCDLineNumbers::Line3)
+                                    lcd.write_temperature_and_strength(
+                                        lcd_screen::LCDLineNumbers::Line3,
+                                    )
                                 }
                                 if line2_text.len()
                                     > lcd_screen::LCDLineNumbers::NUM_CHARACTERS_PER_LINE
@@ -208,6 +210,7 @@ fn main() -> Result<(), anyhow::Error> {
                     assert_eq!(version, rradio_messages::VERSION)
                 }
                 Event::LogMessage(log_message) => {
+                    println!("Error {:?}", log_message);
                     match log_message {
                         rradio_messages::LogMessage::Error(error_message) => {
                             let displayed_error_message = match error_message {
@@ -391,7 +394,9 @@ fn main() -> Result<(), anyhow::Error> {
                                         lcd_screen::LCDLineNumbers::LINE1_DATA_CHAR_COUNT,
                                         format!("No station {}", current_channel).as_str(),
                                     );
-                                    lcd.write_temperature(lcd_screen::LCDLineNumbers::Line4);
+                                    lcd.write_temperature_and_strength(
+                                        lcd_screen::LCDLineNumbers::Line4,
+                                    );
                                     lcd.write_ascii(
                                         lcd_screen::LCDLineNumbers::Line4,
                                         17,
@@ -426,6 +431,7 @@ fn main() -> Result<(), anyhow::Error> {
                 }
 
                 Event::PlayerStateChanged(diff) => {
+                    //println! ("diff {:?}" ,diff);
                     use rradio_messages::{PingTarget, PingTimes};
                     if started_up
                         && station_change_time.elapsed() > std::time::Duration::from_secs(6)
@@ -515,25 +521,28 @@ fn main() -> Result<(), anyhow::Error> {
                                 }
                                 .to_string(),
                             };
-                            if ping_message != PING_TIME_NONE{
-                            lcd.write_line(
-                                lcd_screen::LCDLineNumbers::Line1,
-                                lcd_screen::LCDLineNumbers::LINE1_DATA_CHAR_COUNT,
-                                &ping_message,
-                            )};
+
+                            if ping_message != PING_TIME_NONE {
+                                lcd.write_line(
+                                    lcd_screen::LCDLineNumbers::Line1,
+                                    lcd_screen::LCDLineNumbers::LINE1_DATA_CHAR_COUNT,
+                                    &ping_message,
+                                )
+                            };
                         }
                     }
+
                     if !started_up {
                         if let Some(ping_times) = diff.ping_times {
                             show_temparature_instead_of_gateway_ping =
                                 !show_temparature_instead_of_gateway_ping;
-                                let ping_message = match ping_times {
+                            let ping_message = match ping_times {
                                 PingTimes::FinishedPingingRemote { gateway_ping: _ }
                                     if show_temparature_instead_of_gateway_ping =>
                                 {
                                     format!("CPU temp{:>3}C", lcd.get_cpu_temperature())
                                 }
-                                PingTimes::Gateway(Ok(gateway_ping)) 
+                                PingTimes::Gateway(Ok(gateway_ping))
                                 | PingTimes::GatewayAndRemote {
                                     gateway_ping, // this branch matches local pings that did not give an error
                                     remote_ping: _,
@@ -600,14 +609,16 @@ fn main() -> Result<(), anyhow::Error> {
                                 }
                                 .to_string(),
                             };
-                            if ping_message != PING_TIME_NONE{
-                            lcd.write_line(
-                                lcd_screen::LCDLineNumbers::Line2,
-                                lcd_screen::LCDLineNumbers::NUM_CHARACTERS_PER_LINE,
-                                &ping_message,
-                            );}
+                            if ping_message != PING_TIME_NONE {
+                                lcd.write_line(
+                                    lcd_screen::LCDLineNumbers::Line2,
+                                    lcd_screen::LCDLineNumbers::NUM_CHARACTERS_PER_LINE,
+                                    &ping_message,
+                                );
+                            }
                         }
                     }
+
                     if let Some(current_track_tags) = diff.current_track_tags.into_option() {
                         //println!("1current track tags {:?}", current_track_tags);
 
@@ -680,12 +691,7 @@ fn main() -> Result<(), anyhow::Error> {
                         };
                     }
                     if let Some(current_station) = diff.current_station.into_option() {
-                        if started_up {
-                            lcd.clear()
-                        };
                         duration = None;
-                        got_station = true;
-                        error_state = ErrorState::NoError;
                         error_message_output = false; // as there is no error, we have not output one
                         song_title = ArcStr::new();
                         artist = ArcStr::new();
@@ -696,6 +702,12 @@ fn main() -> Result<(), anyhow::Error> {
                         song_title_scroll_position = 0;
                         current_track_index = 0;
                         if let Some(station) = current_station {
+                            if started_up {
+                                println!("clearing screen");
+                                got_station = true;
+                                error_state = ErrorState::NoError;
+                                lcd.clear()
+                            };
                             station_type = station.source_type;
                             number_of_tracks = station
                                 .tracks
