@@ -734,8 +734,8 @@ dependencies = [
 
 [[package]]
 name = "rradio-messages"
-version = "0.22.1"
-source = "git+https://github.com/sammhicks/internet-radio-rs#8bbc6f31297a41fa042fa5ceac33c439a9c296ed"
+version = "0.22.2"
+source = "git+https://github.com/sammhicks/internet-radio-rs?branch=development#978710dfc719346c92c00d783431ced2e390b7a4"
 dependencies = [
  "arcstr",
  "serde",
@@ -761,6 +761,7 @@ dependencies = [
  "rradio-messages",
  "serde",
  "smol",
+ "tokio",
  "toml",
  "unidecode",
 ]
@@ -887,6 +888,15 @@ dependencies = [
  "libc",
  "wasi",
  "winapi",
+]
+
+[[package]]
+name = "tokio"
+version = "1.17.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2af73ac49756f3f7c01172e34a23e5d0216f6c32333757c2c61feb2bbff5a5ee"
+dependencies = [
+ "pin-project-lite",
 ]
 
 [[package]]
