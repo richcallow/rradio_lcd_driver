@@ -7,7 +7,7 @@ mod get_temperature;
 mod get_wifi_strength;
 mod hal;
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq)]
 pub enum LCDLineNumbers {
     Line1,
     Line2,
@@ -135,7 +135,7 @@ impl LcdScreen {
                     _ => unidecode::unidecode_char(unicode_character).as_bytes(),
                 };
                 for octet in ascii_character_bytes {
-                    self.lcd.write(*octet);
+                    self.lcd.write(*octet);dfdvf
                 }
             }
         }
@@ -147,19 +147,40 @@ impl LcdScreen {
         string: &str,
         position: &mut usize,
     ) {
-        for i in *position + 1..*position + 6 {
-            // scroll to the next space, if it is reasonably soon
-            if string.as_bytes()[i] == ' ' as u8 {
-                *position = i;
+        if string.is_char_boundary(*position) {
+            // check that the preceding decrements of postion have solved the char boundary problem
+            self.write_multiline(line, length, &string[*position..]); // as they have, we can safely call this line
+        }
+        let mut found_space = false;
+        for i in *position + 6..*position + 14 {
+            // scroll to the next space, if it is reasonably soon, but not too soon
+            if i < string.len() - 1 {
+                // check the index stays within bounds
+                if string.as_bytes()[i] == ' ' as u8 {
+                    *position = i;
+                    found_space = true;
+                    break;
+                }
+            } else {
+                println!("Breaking to avoid going beyond end of string");
                 break;
             }
         }
-        *position += 1; // Advance past the space (if the "for" loop found one), else advance 1 character
-        if (*position > string.len() - 9) || *position > length {
-            // If we are alsmost at the end of the start again. Also ensure that position remains in bounds
+        if !found_space {
+            *position += 6;
+        }
+
+        *position += 1; // Advance past the space (if the "for" loop found one), else advance 1 byte (perhaps not 1 character!)
+        if *position > string.len() - 10 {
+            // If we are almost at the end of the start again. Also ensure that position remains in bounds
             *position = 0;
         }
-        self.write_multiline(line, length, &string[*position..])
+        if (*position > 0) && !(&string.is_char_boundary(*position)) {
+            *position -= 1 // if we are not on a character boundary because we have a multi-byte character bring the pointer back one byte to be on a boundary
+        }
+        if (*position > 0) && !(&string.is_char_boundary(*position)) {
+            *position -= 1 // second attempt; a few characters use 3 bytes
+        }
     }
     pub fn write_all_line_2(&mut self, string: &str) {
         self.write_line(

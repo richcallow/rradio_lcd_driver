@@ -1,12 +1,16 @@
 use std::fs::File;
-use std::io::prelude::Read;        //needed for .read_to_string
+use std::io::prelude::Read; //needed for .read_to_string
 
 pub fn get_wifi_signal_strength() -> String {
     let mut file = match File::open("/proc/net/wireless") {
         Ok(file) => file,
-        Err(error) => {        println!(    "Problem opening the signal strength pseudo-file: {:?}",            error);
-        return "er1".to_string();
-    }
+        Err(error) => {
+            println!(
+                "Problem opening the signal strength pseudo-file: {:?}",
+                error
+            );
+            return "er1".to_string();
+        }
     };
 
     let mut signal_strength = String::new();
