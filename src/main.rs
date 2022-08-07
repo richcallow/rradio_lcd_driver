@@ -1,8 +1,8 @@
 use anyhow::Context;
 use chrono::Local;
 
-use rradio_messages::{ArcStr, Event, PipelineState};
 use futures_util::StreamExt;
+use rradio_messages::{ArcStr, Event, PipelineState};
 
 mod get_local_ip_address;
 mod lcd_screen;
@@ -46,11 +46,21 @@ async fn main() -> Result<(), anyhow::Error> {
         0,
         get_local_ip_address::get_local_ip_address().as_str(),
     );
-    lcd.write_temperature_and_time_to_line4();
+    //lcd.write_temperature_and_time_to_line4();
+
+    let mut ver;
+    ver = rradio_messages::API_VERSION_HEADER.to_string();
+    ver = ver[0..rradio_messages::API_VERSION_HEADER_LENGTH - 1].to_string();
+    if rradio_messages::API_VERSION_HEADER_LENGTH > "rradio-messages".len() {
+        ver = ver["rradio-messages".len()..].to_string();
+    }
+
+    println!("Expecting version {} of rradio messages", ver);
+
     lcd.write_multiline(
         lcd_screen::LCDLineNumbers::Line2,
         lcd_screen::LCDLineNumbers::NUM_CHARACTERS_PER_LINE * 2,
-        format!("No connection to    internal server").as_str(), // the spaces are intentional
+        format!("Expecting version   {} of rradio", ver).as_str(), // the spaces are intentional
     );
 
     let mut started_up = false;
@@ -79,6 +89,26 @@ async fn main() -> Result<(), anyhow::Error> {
     let mut error_message_output = false;
     let mut pause_before_playing = 0;
     let mut show_temparature_instead_of_gateway_ping = false;
+  
+    match tokio::net::TcpStream::connect((std::net::Ipv4Addr::LOCALHOST, 8002)).await {
+        Ok(stream) => {
+            let gg= rradio_messages::Event::decode_from_stream(tokio::io::BufReader::new(
+                stream,
+            ))
+            .await;
+            match gg {
+                Ok (_hh) => {
+                    println! ("hhhh ");
+
+            },
+                Err(error) => {println!{"Found Header mismatch!!!   {}", error};}
+            }
+
+            }
+        Err(err) => {
+            println!("This is my message, namely failed to connect: {:?}", err)
+        }
+    }
 
     let rradio_events = loop {
         match tokio::net::TcpStream::connect((std::net::Ipv4Addr::LOCALHOST, 8002)).await {
@@ -89,7 +119,9 @@ async fn main() -> Result<(), anyhow::Error> {
                     lcd_screen::LCDLineNumbers::NUM_CHARACTERS_PER_LINE * 2,
                     "",
                 );
-                break rradio_messages::Event::decode_from_stream(tokio::io::BufReader::new(stream)).await?;
+                
+                let connect_result = rradio_messages::Event::decode_from_stream(tokio::io::BufReader::new(stream,)).await.expect("Header mismatch:");
+                break connect_result;
             }
             Err(error) => {
                 no_connection_counter += 1;
@@ -97,8 +129,9 @@ async fn main() -> Result<(), anyhow::Error> {
                     "Connnection count{}: Connection Error: {:?}",
                     no_connection_counter, error
                 );
-                lcd.write_temperature_and_time_to_line4();        
-                tokio::time::sleep(std::time::Duration::from_millis(1000)).await; // Wait for 1000ms
+                lcd.write_temperature_and_time_to_line4();
+                tokio::time::sleep(std::time::Duration::from_millis(1000)).await;
+                // Wait for 1000ms
             }
         }
     };
@@ -110,65 +143,66 @@ async fn main() -> Result<(), anyhow::Error> {
     loop {
         // fetch the next rradio event, or scroll on timeout
         let timeout_time = last_scroll_time + scroll_period;
-        let next_rradio_event = match tokio::time::timeout_at(timeout_time, rradio_events.next()).await {
-            Ok(None) => break, // No more rradio events, so shutdown
-            Ok(Some(event)) => event?,
-            Err(_) => {
-                match error_state {
-                    ErrorState::NoStation => {
-                        lcd.write_temperature_and_strength(lcd_screen::LCDLineNumbers::Line4);
-                        lcd.write_date_and_time_of_day_line3();
-                    }
-                    ErrorState::NoError => {
-                        error_message_output = false; // as there is no error, we have not output one
-                        if num_of_scrolls_received >= number_scroll_events_before_scrolling {
-                            if song_title.len()
-                                > lcd_screen::LCDLineNumbers::NUM_CHARACTERS_PER_LINE * 2
-                            {
-                                lcd.write_with_scroll(
-                                    lcd_screen::LCDLineNumbers::Line3,
-                                    lcd_screen::LCDLineNumbers::NUM_CHARACTERS_PER_LINE * 2,
-                                    song_title.as_ref(),
-                                    &mut song_title_scroll_position,
-                                );
-                            } else if song_title.len() == 0 && started_up {
-                                // we have space to write the temperature
-                                lcd.write_temperature_and_strength(
-                                    lcd_screen::LCDLineNumbers::Line3,
-                                )
-                            }
-                            if line2_text.len()
-                                > lcd_screen::LCDLineNumbers::NUM_CHARACTERS_PER_LINE
-                            {
-                                lcd.write_with_scroll(
-                                    lcd_screen::LCDLineNumbers::Line2,
-                                    lcd_screen::LCDLineNumbers::NUM_CHARACTERS_PER_LINE,
-                                    line2_text.as_str(),
-                                    &mut line2_text_scroll_position,
-                                );
-                            }
-                        } else {
-                            num_of_scrolls_received += 1; // no need to increment once we have reached the limit & this way we cannot overflow
+        let next_rradio_event =
+            match tokio::time::timeout_at(timeout_time, rradio_events.next()).await {
+                Ok(None) => break, // No more rradio events, so shutdown
+                Ok(Some(event)) => event?,
+                Err(_) => {
+                    match error_state {
+                        ErrorState::NoStation => {
+                            lcd.write_temperature_and_strength(lcd_screen::LCDLineNumbers::Line4);
+                            lcd.write_date_and_time_of_day_line3();
                         }
-                        if !started_up {
-                            lcd.write_temperature_and_time_to_line4();
+                        ErrorState::NoError => {
+                            error_message_output = false; // as there is no error, we have not output one
+                            if num_of_scrolls_received >= number_scroll_events_before_scrolling {
+                                if song_title.len()
+                                    > lcd_screen::LCDLineNumbers::NUM_CHARACTERS_PER_LINE * 2
+                                {
+                                    lcd.write_with_scroll(
+                                        lcd_screen::LCDLineNumbers::Line3,
+                                        lcd_screen::LCDLineNumbers::NUM_CHARACTERS_PER_LINE * 2,
+                                        song_title.as_ref(),
+                                        &mut song_title_scroll_position,
+                                    );
+                                } else if song_title.len() == 0 && started_up {
+                                    // we have space to write the temperature
+                                    lcd.write_temperature_and_strength(
+                                        lcd_screen::LCDLineNumbers::Line3,
+                                    )
+                                }
+                                if line2_text.len()
+                                    > lcd_screen::LCDLineNumbers::NUM_CHARACTERS_PER_LINE
+                                {
+                                    lcd.write_with_scroll(
+                                        lcd_screen::LCDLineNumbers::Line2,
+                                        lcd_screen::LCDLineNumbers::NUM_CHARACTERS_PER_LINE,
+                                        line2_text.as_str(),
+                                        &mut line2_text_scroll_position,
+                                    );
+                                }
+                            } else {
+                                num_of_scrolls_received += 1; // no need to increment once we have reached the limit & this way we cannot overflow
+                            }
+                            if !started_up {
+                                lcd.write_temperature_and_time_to_line4();
+                            }
                         }
+                        ErrorState::NotKnown => println!("Error state: unknown.\n"),
+                        ErrorState::CdError => println!("Error state: CD Error\n"),
+                        ErrorState::CdEjectError => println!("Error state CD eject error\n"),
+                        ErrorState::UPnPError => println!("UPnP error\n"),
+                        ErrorState::UsbOrSambaError => {
+                            println!("Error state: USB or server Error\n")
+                        }
+                        ErrorState::ProgrammerError => println!("Error state:: Programmer error\n"),
+                        ErrorState::GStreamerError => println!("Error state:: Gstreamer error\n"),
+                        //_ => println!("got unexpected error state {:?}", error_state),
                     }
-                    ErrorState::NotKnown => println!("Error state: unknown.\n"),
-                    ErrorState::CdError => println!("Error state: CD Error\n"),
-                    ErrorState::CdEjectError => println!("Error state CD eject error\n"),
-                    ErrorState::UPnPError => println!("UPnP error\n"),
-                    ErrorState::UsbOrSambaError => {
-                        println!("Error state: USB or server Error\n")
-                    }
-                    ErrorState::ProgrammerError => println!("Error state:: Programmer error\n"),
-                    ErrorState::GStreamerError => println!("Error state:: Gstreamer error\n"),
-                    //_ => println!("got unexpected error state {:?}", error_state),
+                    last_scroll_time = timeout_time;
+                    continue;
                 }
-                last_scroll_time = timeout_time;
-                continue;
-            }
-        };
+            };
 
         log::info!("Event: {:?}", next_rradio_event);
 
@@ -188,9 +222,7 @@ async fn main() -> Result<(), anyhow::Error> {
                 match log_message {
                     rradio_messages::LogMessage::Error(error_message) => {
                         let displayed_error_message = match error_message {
-                            rradio_messages::Error::NoPlaylist => {
-                                "No playlist found".to_string()
-                            }
+                            rradio_messages::Error::NoPlaylist => "No playlist found".to_string(),
 
                             rradio_messages::Error::InvalidTrackIndex(index) => {
                                 error_state = ErrorState::ProgrammerError;
@@ -208,15 +240,12 @@ async fn main() -> Result<(), anyhow::Error> {
                                 error_state = ErrorState::CdError;
                                 println!("CD ERRRR {}", cderr);
                                 match cderr {
-                                    rradio_messages::CdError::FailedToOpenDevice(
-                                        error_string,
-                                    ) => {
+                                    rradio_messages::CdError::FailedToOpenDevice(error_string) => {
                                         let os_error = String::from("os error ");
                                         let pos = error_string.find(os_error.as_str());
                                         if let Some(mut position) = pos {
                                             position += os_error.len();
-                                            let error_string_shortened =
-                                                &error_string[position..];
+                                            let error_string_shortened = &error_string[position..];
 
                                             match error_string_shortened {
                                                 "123)" => format!("CD missing"),
@@ -324,11 +353,14 @@ async fn main() -> Result<(), anyhow::Error> {
                                         "Mount (USB or file server) error: Tracks not found".to_string()
                                     }
                                 }
-                            },
-                            rradio_messages::Error::StationError(rradio_messages::StationError::UPnPError(err)) => {
+                            }
+                            rradio_messages::Error::StationError(
+                                rradio_messages::StationError::UPnPError(err),
+                            ) => {
                                 error_message_output = false; //always want this message output
-                                error_state = ErrorState::UPnPError;                                  
-                                format!("UPnP error {}",err)},
+                                error_state = ErrorState::UPnPError;
+                                format!("UPnP error {}", err)
+                            }
 
                             rradio_messages::Error::StationError(
                                 rradio_messages::StationError::StationsDirectoryIoError {
@@ -351,9 +383,7 @@ async fn main() -> Result<(), anyhow::Error> {
                                 format!("Bad station file {}", err)
                             }
                             rradio_messages::Error::StationError(
-                                rradio_messages::StationError::StationNotFound {
-                                    index, ..
-                                },
+                                rradio_messages::StationError::StationNotFound { index, .. },
                             ) => {
                                 error_state = ErrorState::NoStation;
                                 current_channel = index.to_string();
@@ -390,10 +420,10 @@ async fn main() -> Result<(), anyhow::Error> {
                                 //error_message_output = true;
                                 "CD EjectError".to_string()
                             } /*_ => {
-                                    error_state = ErrorState::NotKnown;
-                                    lcd.write_all_line_2("Got unhandled error");
-                                    continue;
-                                }*/
+                                  error_state = ErrorState::NotKnown;
+                                  lcd.write_all_line_2("Got unhandled error");
+                                  continue;
+                              }*/
                         };
                         if !error_message_output {
                             lcd.write_multiline(
@@ -411,9 +441,7 @@ async fn main() -> Result<(), anyhow::Error> {
             Event::PlayerStateChanged(diff) => {
                 //println! ("diff {:?}" ,diff);
                 use rradio_messages::{PingTarget, PingTimes};
-                if started_up
-                    && station_change_time.elapsed() > std::time::Duration::from_secs(6)
-                {
+                if started_up && station_change_time.elapsed() > std::time::Duration::from_secs(6) {
                     if let Some(ref ping_times) = diff.ping_times {
                         show_temparature_instead_of_gateway_ping =
                             !show_temparature_instead_of_gateway_ping;
@@ -437,10 +465,7 @@ async fn main() -> Result<(), anyhow::Error> {
                                         width = 1
                                     )
                                 } else {
-                                    format!(
-                                        "LocPing{:>3}ms",
-                                        gateway_ping.as_nanos() / 1000_000
-                                    )
+                                    format!("LocPing{:>3}ms", gateway_ping.as_nanos() / 1000_000)
                                 }
                             }
                             .to_string(),
@@ -470,9 +495,7 @@ async fn main() -> Result<(), anyhow::Error> {
                                         "LDest Unreach"
                                     } // Ping response reported as "Destination Unreachable"
                                     rradio_messages::PingError::Timeout => "LPing NoReply",
-                                    rradio_messages::PingError::FailedToSendICMP => {
-                                        "LPing Tx Fail"
-                                    }
+                                    rradio_messages::PingError::FailedToSendICMP => "LPing Tx Fail",
                                     rradio_messages::PingError::Dns => "LPing DNS err",
                                 }
                             })
@@ -491,9 +514,7 @@ async fn main() -> Result<(), anyhow::Error> {
                                         "RDest Unreach"
                                     }
                                     rradio_messages::PingError::Timeout => "RPing NoReply",
-                                    rradio_messages::PingError::FailedToSendICMP => {
-                                        "LPing Tx fail"
-                                    }
+                                    rradio_messages::PingError::FailedToSendICMP => "LPing Tx fail",
                                     rradio_messages::PingError::Dns => "RPing DNS err",
                                 }
                             }
@@ -555,9 +576,7 @@ async fn main() -> Result<(), anyhow::Error> {
                                     rradio_messages::PingError::DestinationUnreachable => {
                                         "Loc Dest Unreachable"
                                     } // Ping response reported as "Destination Unreachable"
-                                    rradio_messages::PingError::Timeout => {
-                                        "Local ping: No reply"
-                                    }
+                                    rradio_messages::PingError::Timeout => "Local ping: No reply",
                                     rradio_messages::PingError::FailedToSendICMP => {
                                         "Local ping: Tx Fail"
                                     }
@@ -579,9 +598,7 @@ async fn main() -> Result<(), anyhow::Error> {
                                         "RDest Unreach"
                                     }
                                     rradio_messages::PingError::Timeout => "RPing NoReply",
-                                    rradio_messages::PingError::FailedToSendICMP => {
-                                        "LPing Tx fail"
-                                    }
+                                    rradio_messages::PingError::FailedToSendICMP => "LPing Tx fail",
                                     rradio_messages::PingError::Dns => "RPing DNS err",
                                 }
                             }
@@ -683,10 +700,12 @@ async fn main() -> Result<(), anyhow::Error> {
                             lcd.clear()
                         };
                         station_type = station.source_type;
-                        number_of_tracks = station
-                            .tracks.as_ref().map_or(0, |tracks|tracks.iter() // we iterate through the tracks, excluding those that are merely notifications, & count them
-                            .filter(|track| !track.is_notification)
-                            .count());
+                        number_of_tracks = station.tracks.as_ref().map_or(0, |tracks| {
+                            tracks
+                                .iter() // we iterate through the tracks, excluding those that are merely notifications, & count them
+                                .filter(|track| !track.is_notification)
+                                .count()
+                        });
                         //println!("Current Station{:?} with {} tracks",station, number_of_tracks);
                         match station_type {
                             rradio_messages::StationType::CD => {
@@ -703,8 +722,11 @@ async fn main() -> Result<(), anyhow::Error> {
                         if station_title.to_lowercase().starts_with("quiet: ") {
                             station_title = station_title["QUIET: ".len()..].to_string();
                         }
-                        current_channel = String::from(station.index.as_ref().map_or("", |index| index.as_str()));
-                        if let Some(first_track) = station.tracks.as_deref().and_then(|tracks| tracks.iter().filter(|track| !track.is_notification).next()) {
+                        current_channel =
+                            String::from(station.index.as_ref().map_or("", |index| index.as_str()));
+                        if let Some(first_track) = station.tracks.as_deref().and_then(|tracks| {
+                            tracks.iter().filter(|track| !track.is_notification).next()
+                        }) {
                             if let Some(artist_from_track) = &first_track.artist {
                                 artist = artist_from_track.clone();
                                 line2_text = assembleline2(
@@ -748,7 +770,8 @@ async fn main() -> Result<(), anyhow::Error> {
                             rradio_messages::StationType::Usb => {
                                 format!("USB {}", &current_channel)
                             }
-                            rradio_messages::StationType::UrlList | rradio_messages::StationType::UPnP => {
+                            rradio_messages::StationType::UrlList
+                            | rradio_messages::StationType::UPnP => {
                                 format!("Station {}", &current_channel)
                             }
                             rradio_messages::StationType::Samba => {
@@ -843,8 +866,7 @@ async fn main() -> Result<(), anyhow::Error> {
                 }
                 if let Some(position) = diff.track_position {
                     if let Some((duration, position)) = duration.zip(position) {
-                        if got_station
-                            && pipe_line_state == rradio_messages::PipelineState::Playing
+                        if got_station && pipe_line_state == rradio_messages::PipelineState::Playing
                         {
                             match error_state {
                                 ErrorState::NoError => {

@@ -1,5 +1,3 @@
-
-
 pub fn get_local_ip_address() -> String {
     let mut return_value: String = String::from("bad Local IP address");
     let mut got_address = false;

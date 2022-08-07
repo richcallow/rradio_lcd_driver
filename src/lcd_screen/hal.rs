@@ -37,9 +37,9 @@ impl clerk::DisplayHardwareLayer for Line {
 pub struct Delay;
 
 impl clerk::Delay for Delay {
-    const ADDRESS_SETUP_TIME: u16 = 60 *4;
-    const ENABLE_PULSE_WIDTH: u16 = 450 *4; //300; // 300ns in the spec sheet 450;
-    const DATA_HOLD_TIME: u16 = 10 *4; // 10ns in the spec sheet  20;
+    const ADDRESS_SETUP_TIME: u16 = 60 * 4;
+    const ENABLE_PULSE_WIDTH: u16 = 450 * 4; //300; // 300ns in the spec sheet 450;
+    const DATA_HOLD_TIME: u16 = 10 * 4; // 10ns in the spec sheet  20;
     const COMMAND_EXECUTION_TIME: u16 = 37 * 4;
 
     fn delay_ns(ns: u16) {
