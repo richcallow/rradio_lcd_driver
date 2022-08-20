@@ -16,7 +16,7 @@ pnet =  { version =  "0.31", features = [ "std" ] }          # used to get the l
 pretty_env_logger = "0.4"
 psutil = "3.2"
 procfs = "0.14"
-rradio-messages = { git = "https://github.com/sammhicks/internet-radio-rs", features = [ "async" ] }
+rradio-messages = { git = "https://github.com/sammhicks/internet-radio-rs", branch = "development", features = [ "async" ] }
 serde = { version = "1.0", features = [ "derive" ] }
 tokio = { version = "1.20", features = [ "rt", "net", "time", "macros" ] }
 toml = "0.5"

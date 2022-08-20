@@ -630,7 +630,7 @@ checksum = "a3f87b73ce11b1619a3c6332f45341e0047173771e8b8b73f87bfeefb7b56244"
 [[package]]
 name = "rradio-messages"
 version = "0.31.1"
-source = "git+https://github.com/sammhicks/internet-radio-rs#d2e128e6548a75add68376813aa2aba752f62d6b"
+source = "git+https://github.com/sammhicks/internet-radio-rs?branch=development#476c12177263962d763759e8e77f21ee3d3387ad"
 dependencies = [
  "arcstr",
  "base64",

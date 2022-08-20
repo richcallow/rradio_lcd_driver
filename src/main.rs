@@ -46,21 +46,16 @@ async fn main() -> Result<(), anyhow::Error> {
         0,
         get_local_ip_address::get_local_ip_address().as_str(),
     );
-    //lcd.write_temperature_and_time_to_line4();
-
-    let mut ver;
-    ver = rradio_messages::API_VERSION_HEADER.to_string();
-    ver = ver[0..rradio_messages::API_VERSION_HEADER_LENGTH - 1].to_string();
-    if rradio_messages::API_VERSION_HEADER_LENGTH > "rradio-messages".len() {
-        ver = ver["rradio-messages".len()..].to_string();
-    }
-
-    println!("Expecting version {} of rradio messages", ver);
+    
+    println!(
+        "Expecting version {} of rradio messages",
+        rradio_messages::VERSION
+    );
 
     lcd.write_multiline(
         lcd_screen::LCDLineNumbers::Line2,
         lcd_screen::LCDLineNumbers::NUM_CHARACTERS_PER_LINE * 2,
-        format!("Expecting version   {} of rradio", ver).as_str(), // the spaces are intentional
+        format!("Expecting version   {} of rradio", rradio_messages::VERSION).as_str(), // the spaces are intentional
     );
 
     let mut started_up = false;
@@ -89,26 +84,6 @@ async fn main() -> Result<(), anyhow::Error> {
     let mut error_message_output = false;
     let mut pause_before_playing = 0;
     let mut show_temparature_instead_of_gateway_ping = false;
-  
-    match tokio::net::TcpStream::connect((std::net::Ipv4Addr::LOCALHOST, 8002)).await {
-        Ok(stream) => {
-            let gg= rradio_messages::Event::decode_from_stream(tokio::io::BufReader::new(
-                stream,
-            ))
-            .await;
-            match gg {
-                Ok (_hh) => {
-                    println! ("hhhh ");
-
-            },
-                Err(error) => {println!{"Found Header mismatch!!!   {}", error};}
-            }
-
-            }
-        Err(err) => {
-            println!("This is my message, namely failed to connect: {:?}", err)
-        }
-    }
 
     let rradio_events = loop {
         match tokio::net::TcpStream::connect((std::net::Ipv4Addr::LOCALHOST, 8002)).await {
@@ -119,9 +94,84 @@ async fn main() -> Result<(), anyhow::Error> {
                     lcd_screen::LCDLineNumbers::NUM_CHARACTERS_PER_LINE * 2,
                     "",
                 );
-                
-                let connect_result = rradio_messages::Event::decode_from_stream(tokio::io::BufReader::new(stream,)).await.expect("Header mismatch:");
-                break connect_result;
+                // we have got a message, but we do not know if it is valid, so we try & decode it
+                break rradio_messages::Event::decode_from_stream(tokio::io::BufReader::new(
+                    stream,
+                ))
+                .await
+                .map_err(|err| {
+                    match &err {
+                        rradio_messages::BadRRadioHeader::FailedToReadHeader(_io_error) => {
+                            lcd.write_multiline(
+                                // it was a really bad error, so write it to the LCD screen.
+                                // it was so bad we might as well write to the entire screen
+                                lcd_screen::LCDLineNumbers::Line1,
+                                lcd_screen::LCDLineNumbers::NUM_CHARACTERS_PER_LINE * 4,
+                                err.to_string().as_str(),
+                            );
+                        }
+                        rradio_messages::BadRRadioHeader::HeaderMismatch {
+                            expected: _,
+                            actual,
+                        } => match std::str::from_utf8(&actual[..]) {
+                            // the convert to UTF8 assumes that the characters are ASCII
+                            Err(_) => {
+                                lcd.write_line(
+                                    // oops they were not ASCII so report the problem
+                                    lcd_screen::LCDLineNumbers::Line1,
+                                    lcd_screen::LCDLineNumbers::NUM_CHARACTERS_PER_LINE,
+                                    "Bad RRadio Header",
+                                );
+                                lcd.write_line(
+                                    lcd_screen::LCDLineNumbers::Line2,
+                                    lcd_screen::LCDLineNumbers::NUM_CHARACTERS_PER_LINE,
+                                    "Not UTF-8",
+                                );
+                                lcd.write_multiline(
+                                    lcd_screen::LCDLineNumbers::Line3,
+                                    lcd_screen::LCDLineNumbers::NUM_CHARACTERS_PER_LINE * 2,
+                                    &rradio_messages::DisplayApiHeader(&actual[..]).to_string(),
+                                );
+                            }
+                            Ok(actual_str) => match actual_str.strip_prefix("rradio-messages_") {
+                                // it was ASCII; it should start with the string "rradio-messages_"
+                                // so try & remove the string, which of course could fail
+                                None => {
+                                    // it did fail, so it could not have been a rradio message
+                                    lcd.write_line(
+                                        lcd_screen::LCDLineNumbers::Line1,
+                                        lcd_screen::LCDLineNumbers::NUM_CHARACTERS_PER_LINE,
+                                        "Not RRadio",
+                                    );
+                                    lcd.write_multiline(
+                                        lcd_screen::LCDLineNumbers::Line2,
+                                        lcd_screen::LCDLineNumbers::NUM_CHARACTERS_PER_LINE * 3,
+                                        &rradio_messages::DisplayApiHeader(&actual[..]).to_string(),
+                                    );
+                                }
+                                Some(version) => { // the message was from rradio, but the version was wrong.
+                                    lcd.write_line(
+                                        lcd_screen::LCDLineNumbers::Line1,
+                                        lcd_screen::LCDLineNumbers::NUM_CHARACTERS_PER_LINE,
+                                        "Version Mismatch",
+                                    );
+                                    lcd.write_line(
+                                        lcd_screen::LCDLineNumbers::Line2,
+                                        lcd_screen::LCDLineNumbers::NUM_CHARACTERS_PER_LINE,
+                                        &format!("Local:  {}", rradio_messages::VERSION),
+                                    );
+                                    lcd.write_line(
+                                        lcd_screen::LCDLineNumbers::Line3,
+                                        lcd_screen::LCDLineNumbers::NUM_CHARACTERS_PER_LINE,
+                                        &format!("Remote: {}", version.trim_end()),
+                                    );
+                                }
+                            },
+                        },
+                    };
+                    err
+                })
+                .context("Header mismatch")?;
             }
             Err(error) => {
                 no_connection_counter += 1;
