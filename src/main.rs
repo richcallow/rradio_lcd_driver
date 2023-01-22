@@ -46,7 +46,7 @@ async fn main() -> Result<(), anyhow::Error> {
         0,
         get_local_ip_address::get_local_ip_address().as_str(),
     );
-    
+
     println!(
         "Expecting version {} of rradio messages",
         rradio_messages::VERSION
@@ -149,7 +149,8 @@ async fn main() -> Result<(), anyhow::Error> {
                                         &rradio_messages::DisplayApiHeader(&actual[..]).to_string(),
                                     );
                                 }
-                                Some(version) => { // the message was from rradio, but the version was wrong.
+                                Some(version) => {
+                                    // the message was from rradio, but the version was wrong.
                                     lcd.write_line(
                                         lcd_screen::LCDLineNumbers::Line1,
                                         lcd_screen::LCDLineNumbers::NUM_CHARACTERS_PER_LINE,
@@ -179,7 +180,8 @@ async fn main() -> Result<(), anyhow::Error> {
                     "Connnection count{}: Connection Error: {:?}",
                     no_connection_counter, error
                 );
-                lcd.write_temperature_and_time_to_line4();
+                // line 3 contains the version number so cannot use it.
+                lcd.write_temperature_and_strength(lcd_screen::LCDLineNumbers::Line4);
                 tokio::time::sleep(std::time::Duration::from_millis(1000)).await;
                 // Wait for 1000ms
             }
@@ -189,7 +191,7 @@ async fn main() -> Result<(), anyhow::Error> {
 
     const PING_TIME_NONE: &str = "Ping Time None";
 
-    station_change_time = tokio::time::Instant::now(); //now that we have a connection, not when we start
+    station_change_time = tokio::time::Instant::now(); //now that we have a connection, note when we start
     loop {
         // fetch the next rradio event, or scroll on timeout
         let timeout_time = last_scroll_time + scroll_period;
@@ -202,6 +204,11 @@ async fn main() -> Result<(), anyhow::Error> {
                         ErrorState::NoStation => {
                             lcd.write_temperature_and_strength(lcd_screen::LCDLineNumbers::Line4);
                             lcd.write_date_and_time_of_day_line3();
+                            lcd.write_ascii(
+                                lcd_screen::LCDLineNumbers::Line2,
+                                0,
+                                get_local_ip_address::get_local_ip_address().as_str(),
+                            );
                         }
                         ErrorState::NoError => {
                             error_message_output = false; // as there is no error, we have not output one
@@ -234,9 +241,6 @@ async fn main() -> Result<(), anyhow::Error> {
                             } else {
                                 num_of_scrolls_received += 1; // no need to increment once we have reached the limit & this way we cannot overflow
                             }
-                            if !started_up {
-                                lcd.write_temperature_and_time_to_line4();
-                            }
                         }
                         ErrorState::NotKnown => println!("Error state: unknown.\n"),
                         ErrorState::CdError => println!("Error state: CD Error\n"),
@@ -255,6 +259,8 @@ async fn main() -> Result<(), anyhow::Error> {
             };
 
         log::info!("Event: {:?}", next_rradio_event);
+
+        //println!("Event: {:?}", next_rradio_event);
 
         if !started_up {
             if let Event::PlayerStateChanged(rradio_messages::PlayerStateDiff {
@@ -550,7 +556,6 @@ async fn main() -> Result<(), anyhow::Error> {
                                 }
                             })
                             .to_string(),
-
                             PingTimes::GatewayAndRemote {
                                 gateway_ping: _, //this brach matches remote ping that failed
                                 remote_ping: Err(remote_error),
@@ -570,7 +575,6 @@ async fn main() -> Result<(), anyhow::Error> {
                             }
                             .to_string(),
                         };
-
                         if ping_message != PING_TIME_NONE {
                             lcd.write_line(
                                 lcd_screen::LCDLineNumbers::Line1,
@@ -660,7 +664,12 @@ async fn main() -> Result<(), anyhow::Error> {
                                 lcd_screen::LCDLineNumbers::NUM_CHARACTERS_PER_LINE,
                                 &ping_message,
                             );
-                        }
+                        };
+
+                        if  !started_up{
+                            lcd.write_date_and_time_of_day_line3();
+                           lcd.write_temperature_and_time_to_line4();
+                         }
                     }
                 }
 
