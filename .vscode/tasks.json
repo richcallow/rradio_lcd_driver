@@ -4,9 +4,15 @@
     "version": "2.0.0",
     "tasks": [
         {
+            "label": "Update Dependencies",
+            "type": "shell",
+            "command": "cargo update",
+            "problemMatcher": []
+        },
+        {
             "label": "Build",
             "type": "shell",
-            "command": "cross build",
+            "command": "cross build  --release",
             "problemMatcher": "$rustc",
             "group": {
                 "kind": "build",
@@ -14,16 +20,23 @@
             }
         },
         {
-            "label": "Install on 192.168.0.11",
+            "label": "Install on rust pi",
             "type": "shell",
-            "command": "scp target/armv7-unknown-linux-gnueabihf/debug/rradio_lcd_driver 192.168.0.11:/home/pi/remote_rradio/",
+            "command": "scp target/armv7-unknown-linux-gnueabihf/release/rradio_lcd_driver pi@192.168.0.11:/home/pi/lcd_driver",
+            "dependsOn": "Build",
+            "problemMatcher": []
+        },
+        {
+            "label": "Install on study pi",
+            "type": "shell",
+            "command": "scp target/armv7-unknown-linux-gnueabihf/release/rradio_lcd_driver pi@192.168.0.6:/home/pi/lcd_driver",
             "dependsOn": "Build",
             "problemMatcher": []
         },
         {
             "label": "Run on 192.168.0.11",
             "type": "shell",
-            "command": "ssh -t 192.168.0.11 \"cd remote_rradio; sudo ./rradio_lcd_driver;\"",
+            "command": "ssh -t 192.168.0.11 \"sudo ./lcd_driver;\"",
             "problemMatcher": []
         }
     ]

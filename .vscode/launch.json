@@ -7,37 +7,8 @@
         {
             "type": "lldb",
             "request": "launch",
-            "name": "Debug executable 'rradio_lcd_driver'",
-            "cargo": {
-                "args": [
-                    "build",
-                    "--bin=rradio_lcd_driver",
-                    "--package=rradio_lcd_driver"
-                ],
-                "filter": {
-                    "name": "rradio_lcd_driver",
-                    "kind": "bin"
-                }
-            },
-            "args": [],
-            "cwd": "${workspaceFolder}"
-        },
-        {
-            "type": "lldb",
-            "request": "launch",
-            "name": "Debug unit tests in executable 'rradio_lcd_driver'",
-            "cargo": {
-                "args": [
-                    "test",
-                    "--no-run",
-                    "--bin=rradio_lcd_driver",
-                    "--package=rradio_lcd_driver"
-                ],
-                "filter": {
-                    "name": "rradio_lcd_driver",
-                    "kind": "bin"
-                }
-            },
+            "name": "Debug",
+            "program": "${workspaceFolder}/<executable file>",
             "args": [],
             "cwd": "${workspaceFolder}"
         }

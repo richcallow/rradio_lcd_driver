@@ -4,14 +4,16 @@
 	"build": {
 		"dockerfile": "../Dockerfile.build"
 	},
-	"postCreateCommand": "mkdir -p /root/.ssh/ && cp /workspaces/rradio_lcd_driver/.devcontainer/.ssh/* /root/.ssh/ && chmod 600 /root/.ssh/id_rsa",
+	"postCreateCommand": "rustup component add clippy rustfmt rust-docs rust-src && mkdir -p /root/.ssh/ && cp /workspaces/rradio_lcd_driver/.devcontainer/.ssh/* /root/.ssh/ && chmod 600 /root/.ssh/id_rsa",
 	"features": {
 		"ghcr.io/devcontainers/features/docker-in-docker": {}
 	},
 	"customizations": {
 		"vscode": {
 			"extensions": [
+				"actboy168.tasks",
 				"bungcip.better-toml",
+				"MS-vsliveshare.vsliveshare",
 				"rust-lang.rust-analyzer",
 				"serayuzgur.crates",
 				"usernamehw.errorlens",

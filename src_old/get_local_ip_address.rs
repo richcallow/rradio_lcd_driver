@@ -6,7 +6,7 @@ pub fn get_local_ip_address() -> String {
         // go round a wait loop many timesas we need t owait for the IP addresses
         // many times before we get the local IP address working
         for iface in pnet::datalink::interfaces() {
-            if iface.is_up() && !iface.is_loopback() && !iface.ips.is_empty() {
+            if iface.is_up() && !iface.is_loopback() && iface.ips.len() > 0 {
                 // this if statement filters off the loopback address & addresses that do not have an IP address
                 for ipaddr in &iface.ips {
                     let ip4addr = match ipaddr {

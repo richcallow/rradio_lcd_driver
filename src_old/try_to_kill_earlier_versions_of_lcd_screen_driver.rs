@@ -1,5 +1,5 @@
 use psutil::process::Process;
-pub fn try_to_kill_earlier_versions_of_lcd_screen_driver() {
+pub fn try_to_kill_earlier_versions_of_lcd_screen_driver() -> () {
     let me = procfs::process::Process::myself().unwrap();
     //println!("my pid is {}", me.pid);
 
