@@ -1,0 +1,23 @@
+// For format details, see https://aka.ms/devcontainer.json
+{
+	"name": "Rust",
+	"build": {
+		"dockerfile": "../Dockerfile.build"
+	},
+	"postCreateCommand": "mkdir -p /root/.ssh/ && cp /workspaces/rradio_lcd_driver/.devcontainer/.ssh/* /root/.ssh/ && chmod 600 /root/.ssh/id_rsa",
+	"features": {
+		"ghcr.io/devcontainers/features/docker-in-docker": {}
+	},
+	"customizations": {
+		"vscode": {
+			"extensions": [
+				"bungcip.better-toml",
+				"rust-lang.rust-analyzer",
+				"serayuzgur.crates",
+				"usernamehw.errorlens",
+				"vadimcn.vscode-lldb",
+				"yzhang.markdown-all-in-one"
+			]
+		}
+	}
+}
