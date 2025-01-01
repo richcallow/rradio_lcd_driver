@@ -21,14 +21,14 @@ pub fn get_cpu_temperature() -> i32 {
             -1
         }
         Ok(_file_size) => {
-        match cpu_temperature //cpu_temperature contains the temperature in milli-C and a line terminator
+            match cpu_temperature //cpu_temperature contains the temperature in milli-C and a line terminator
                 .trim()
                 .parse::<i32>()
             {
                 Ok(milli_temp) => milli_temp / 1000, //divide by 1000 to convert to C from milli-C and return the temperature
                 Err(err) => {
                     println!("got err {} when parsing the temperature", err);
-                     -3
+                    -3
                 }
             }
         }

@@ -2,7 +2,7 @@
 {
 	"name": "Rust",
 	"build": {
-		"dockerfile": "../Dockerfile.build"
+		"dockerfile": "../Docker/Dockerfile.dev"					//"dockerfile": "../Dockerfile.build"
 	},
 	"postCreateCommand": "rustup component add clippy rustfmt rust-docs rust-src && mkdir -p /root/.ssh/ && cp /workspaces/rradio_lcd_driver/.devcontainer/.ssh/* /root/.ssh/ && chmod 600 /root/.ssh/id_rsa",
 	"features": {

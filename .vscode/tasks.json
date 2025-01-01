@@ -4,6 +4,13 @@
     "version": "2.0.0",
     "tasks": [
         {
+            "label": "check",
+            "type": "shell",
+            "command": "cargo check",
+            "problemMatcher": []
+        },        
+        
+        {
             "label": "Update Dependencies",
             "type": "shell",
             "command": "cargo update",
@@ -12,7 +19,7 @@
         {
             "label": "Build",
             "type": "shell",
-            "command": "cross build  --release",
+            "command": "cross build --release --target aarch64-unknown-linux-gnu",
             "problemMatcher": "$rustc",
             "group": {
                 "kind": "build",
@@ -22,14 +29,21 @@
         {
             "label": "Install on rust pi",
             "type": "shell",
-            "command": "scp target/armv7-unknown-linux-gnueabihf/release/rradio_lcd_driver pi@192.168.0.11:/home/pi/lcd_driver",
+            "command": "scp target/aarch64-unknown-linux-gnu/release/rradio_lcd_driver pi@192.168.0.11:/home/pi/lcd_driver",
             "dependsOn": "Build",
             "problemMatcher": []
         },
         {
             "label": "Install on study pi",
             "type": "shell",
-            "command": "scp target/armv7-unknown-linux-gnueabihf/release/rradio_lcd_driver pi@192.168.0.6:/home/pi/lcd_driver",
+            "command": "scp -v target/aarch64-unknown-linux-gnu/release/rradio_lcd_driver pi@192.168.0.6:/home/pi/lcd_driver",
+            "dependsOn": "Build",
+            "problemMatcher": []
+        },
+        {
+            "label": "Install on kitchen pi",
+            "type": "shell",
+            "command": "scp target/aarch64-unknown-linux-gnu/release/rradio_lcd_driver pi@192.168.0.5:/home/pi/lcd_driver",
             "dependsOn": "Build",
             "problemMatcher": []
         },
